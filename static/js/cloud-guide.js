@@ -23,8 +23,17 @@ export function createCloudGuide(root) {
       const above = player.y > terrace - 1;
       const candidates = [...landmarks.values()].filter(r => !r.visited && (r.id !== 'friend' || !r.locked));
       const sameLevel = candidates.filter(r => (r.object.position.y >= terrace) === above);
-      const record = sameLevel.sort((a, b) => a.object.position.distanceToSquared(player) - b.object.position.distanceToSquared(player))[0];
-      const target = record?.object.position || (candidates.length ? new THREE.Vector3(passage.x, above ? 3 : terrace + 3, passage.z) : null);
+      let record = sameLevel.sort((a, b) => a.object.position.distanceToSquared(player) - b.object.position.distanceToSquared(player))[0];
+      let crossing = false;
+      if (!record && candidates.length) crossing = true;
+      // Keep the compass useful after the collection is complete instead of
+      // disappearing on desktop: point to the nearest unlocked landmark.
+      if (!record && !candidates.length) {
+        record = [...landmarks.values()]
+          .filter(item => !item.locked && ((item.object.position.y >= terrace) === above))
+          .sort((a, b) => a.object.position.distanceToSquared(player) - b.object.position.distanceToSquared(player))[0];
+      }
+      const target = record?.object.position || (crossing ? new THREE.Vector3(passage.x, above ? 3 : terrace + 3, passage.z) : null);
       visible = Boolean(target); panel.hidden = !visible;
       if (!target) return;
       const dx = target.x - player.x, dz = target.z - player.z;
@@ -33,8 +42,8 @@ export function createCloudGuide(root) {
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
       panel.querySelector('strong').textContent = record ? NAMES[record.id] : 'Central opening';
       panel.querySelector('p').textContent = record
-        ? `${Math.round(target.distanceTo(player))} m · ${near === record.id ? 'Ready to enter' : 'Approach to enter'}`
-        : (above ? 'Descend through the opening' : 'Fly through the opening');
+        ? (near === record.id ? 'Use to enter' : `${Math.round(target.distanceTo(player))} m · approach`)
+        : (above ? 'Drop through to the lower cloud' : 'Fly through to the upper cloud');
     },
     render(renderer) {
       if (!visible) return;

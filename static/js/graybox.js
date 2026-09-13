@@ -9,8 +9,7 @@ import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassa
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const coarsePointer = matchMedia('(pointer: coarse)');
-const renderPixelRatio = () => Math.min(devicePixelRatio || 1, 1.75)
-  / (Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--touch-ui-scale')) || 1);
+const renderPixelRatio = () => Math.min(devicePixelRatio || 1, 1.75);
 const PLATFORM = { halfX: 26, halfZ: 48, top: 0.5 };
 const PLAYER_RADIUS = 0.42;
 const OBJECT_POS = new THREE.Vector3(-8, PLATFORM.top, -27);
@@ -44,6 +43,7 @@ const HOLD_TO_FLY_DELAY = 0.48;
 let maxFlightHeight = 48;
 let upperCloudVisual;
 let cloudChamber;
+let authoredCloudScenery;
 let guide;
 let boardObject;
 let boardPosts = [];
@@ -157,10 +157,11 @@ function applyLandmarkLayout() {
   if (moonState !== 'falling') MOON_POS.copy(moonState === 'landed' ? MOON_LAND_POS : MOON_FAR_POS);
   // Height is measured from the upper cloud's actual surface after loading.
   SCROLL_POS.set(SPAWN.x, terraceTopAt(SPAWN.x, SPAWN.z) + 1.8, SPAWN.z);
-  BIRD_CHASE_POINTS[0].set(portrait ? -2 : -3, portrait ? 8 : 9, portrait ? 15 : 13);
-  BIRD_CHASE_POINTS[1].set(portrait ? 6 : 8, portrait ? 7.5 : 8.5, portrait ? 43 : 45);
-  BIRD_CHASE_POINTS[2].set(portrait ? -9 : -12, portrait ? 9 : 10, portrait ? 5 : 2);
-  BIRD_CHASE_POINTS[3].set(portrait ? 8 : 12, portrait ? 8.5 : 9.5, portrait ? -17 : -20);
+  const birdPoint = (point, x, z, lift = 2.7) => point.set(x, lowerFloorAt(x, z) + lift, z);
+  birdPoint(BIRD_CHASE_POINTS[0], portrait ? -2 : -3, portrait ? 15 : 13);
+  birdPoint(BIRD_CHASE_POINTS[1], portrait ? 6 : 8, portrait ? 43 : 45, 3.1);
+  birdPoint(BIRD_CHASE_POINTS[2], portrait ? -9 : -12, portrait ? 5 : 2);
+  birdPoint(BIRD_CHASE_POINTS[3], portrait ? 8 : 12, portrait ? -17 : -20, 3.2);
   BIRD_POS.copy(BIRD_CHASE_POINTS[Math.min(birdChaseStep, BIRD_CHASE_POINTS.length - 1)]);
   LANDMARK_ANCHORS.friend.set(MOON_LAND_POS.x, PLATFORM.top, MOON_LAND_POS.z + 6);
   LANDMARK_ANCHORS.viewer.set(SHIP_POS.x, PLATFORM.top, SHIP_POS.z + 5);
@@ -1003,24 +1004,20 @@ function resolveLandmarkCollisions(x, z, playerY) {
 }
 
 function addShipCloudScenery() {
-  // Retain the cloud palette and surface detail, but not the decorative GLB's
-  // irregular floor, holes or disconnected collision surfaces.
-  const detail = createCloudSurfaceTexture(); detail.repeat.set(4, 4);
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x898398, emissive: 0x242335, emissiveIntensity: .3,
-    map: detail, bumpMap: detail, bumpScale: .11, roughness: 1,
-    side: THREE.DoubleSide, flatShading: true,
+  // Geometry here is collision only. The supplied ship-cloud mesh is installed
+  // as the visible floor, dividing cloud, ceiling and enclosing horizon once
+  // the GLB has loaded.
+  const material = new THREE.MeshBasicMaterial({
+    side: THREE.DoubleSide, colorWrite: false, depthWrite: false,
+    transparent: true, opacity: 0,
   });
   const geometry = createCloudGeometry();
   cloudChamber = new THREE.Mesh(geometry.shell, material);
-  cloudChamber.name = 'Continuous cloud enclosure';
-  cloudFloorVisual = cloudChamber;
+  cloudChamber.name = 'Invisible continuous cloud enclosure';
   upperCloudVisual = new THREE.Mesh(geometry.terrace, material.clone());
-  upperCloudVisual.name = 'Complete middle cloud floor';
-  upperCloudVisual.material.color.set(0xaaa1b1);
+  upperCloudVisual.name = 'Invisible middle cloud floor';
   const group = new THREE.Group();
   group.add(cloudChamber, upperCloudVisual);
-  group.traverse(node => { if (node.isMesh) node.receiveShadow = true; });
   scene.remove(scene.userData.cloudEnvelope);
   scene.add(group); group.updateMatrixWorld(true);
   scene.userData.cloudEnvelope = cloudChamber;
@@ -1082,10 +1079,6 @@ function restoreAuthoredCloudRelief(gltf) {
   const bounds = new THREE.Box3().setFromObject(cloud), size = bounds.getSize(new THREE.Vector3());
   const n = 40, values = new Float32Array(n * n);
   const probe = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0);
-  cloud.traverse(node => { if (node.isMesh) {
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-    materials.forEach(material => { material.side = THREE.DoubleSide; });
-  } });
   // Sample the supplied cloud's sculpted relief, then compress only its height.
   // The sealed arena remains the collision surface, without the GLB's holes.
   for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) {
@@ -1103,6 +1096,87 @@ function restoreAuthoredCloudRelief(gltf) {
   const geometry = createCloudGeometry();
   cloudChamber.geometry.dispose(); upperCloudVisual.geometry.dispose();
   cloudChamber.geometry = geometry.shell; upperCloudVisual.geometry = geometry.terrace;
+
+  // The geometry regression runs this sampling half without a browser scene.
+  if (typeof scene === 'undefined' || !scene) return;
+  cloud.removeFromParent();
+  fitModel(cloud, 20);
+  const detail = createCloudSurfaceTexture(); detail.repeat.set(3, 3);
+  let authoredMaterial;
+  cloud.traverse(node => {
+    if (!node.isMesh) return;
+    node.material = new THREE.MeshStandardMaterial({
+      color: 0x82768f, emissive: 0x171326, emissiveIntensity: .24,
+      map: node.geometry.attributes.uv ? detail : null,
+      bumpMap: node.geometry.attributes.uv ? detail : null,
+      bumpScale: .09, roughness: 1, metalness: 0,
+      flatShading: true, side: THREE.DoubleSide,
+    });
+    node.castShadow = false;
+    node.receiveShadow = true;
+    node.userData.cloudScenery = true;
+    authoredMaterial ||= node.material;
+  });
+
+  scene.remove(authoredCloudScenery);
+  authoredCloudScenery = new THREE.Group();
+  authoredCloudScenery.name = 'One continuous world made from the ship cloud';
+  const addCloud = (name, scale, position, rotation = [0, 0, 0]) => {
+    const copy = cloneSkeleton(cloud);
+    copy.name = name;
+    copy.scale.multiply(new THREE.Vector3(...scale));
+    copy.position.set(...position);
+    copy.rotation.set(...rotation);
+    authoredCloudScenery.add(copy);
+    return copy;
+  };
+
+  // The same authored facets are used on every visible boundary. The lower
+  // surface is deliberately broad and vertically compressed: recognizable
+  // cloud relief without the unwalkable spikes of the literal asset.
+  const floor = addCloud('Ship cloud · lower world', [7.6, 1.35, 8.7], [0, 0, -5], [0, -.08, 0]);
+  authoredCloudScenery.updateMatrixWorld(true);
+  const floorProbe = new THREE.Raycaster(
+    new THREE.Vector3(SPAWN.x, 80, SPAWN.z), new THREE.Vector3(0, -1, 0), 0, 160,
+  ).intersectObject(floor, true)[0];
+  const floorBounds = new THREE.Box3().setFromObject(floor);
+  floor.position.y += lowerFloorAt(SPAWN.x, SPAWN.z) - .1 - (floorProbe?.point.y ?? floorBounds.max.y);
+  cloudFloorVisual = floor;
+
+  // The sampled authored relief is also the exact, continuous middle floor.
+  // Keeping its annular topology guarantees the passage is visually open—not
+  // merely an invisible hole hidden behind overlapping decorative clouds.
+  upperCloudVisual.material.dispose();
+  upperCloudVisual.material = authoredMaterial.clone();
+  upperCloudVisual.material.map = detail;
+  upperCloudVisual.material.bumpMap = detail;
+  upperCloudVisual.material.needsUpdate = true;
+  upperCloudVisual.name = 'Ship cloud · continuous middle floor';
+  upperCloudVisual.receiveShadow = true;
+
+  // A single authored cloud vocabulary wraps the horizon. Adjacent banks
+  // overlap, removing the differently coloured wall seams of earlier builds.
+  for (let i = 0; i < 12; i++) {
+    const angle = i / 12 * Math.PI * 2;
+    const x = Math.cos(angle) * 47;
+    const z = Math.sin(angle) * 67;
+    const wall = addCloud(`Ship cloud · enclosing bank ${i + 1}`, [3.2, 2.5, 3.4], [x, 33, z]);
+    const inward = new THREE.Vector3(-x / 48, 0, -z / 68).normalize();
+    wall.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), inward);
+    wall.rotateY(angle);
+  }
+
+  const ceiling = addCloud('Ship cloud · upper bound', [7.8, 2.7, 8.9], [0, 0, -5], [Math.PI, -.08, 0]);
+  authoredCloudScenery.updateMatrixWorld(true);
+  const ceilingBounds = new THREE.Box3().setFromObject(ceiling);
+  ceiling.position.y += 67 - ceilingBounds.min.y;
+
+  authoredCloudScenery.traverse(node => {
+    if (!node.isMesh) return;
+    node.frustumCulled = false;
+  });
+  scene.add(authoredCloudScenery);
+  scene.userData.cloudScenery = authoredCloudScenery;
   applyLandmarkLayout();
   if (boardObject) boardObject.position.y = terraceTopAt(boardObject.position.x, boardObject.position.z) + 2.2;
 }
