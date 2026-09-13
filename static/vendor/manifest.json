@@ -1,0 +1,9 @@
+{
+  "generatedBy": "scripts/sync-vendor.mjs",
+  "dependencies": {
+    "three": "0.185.1",
+    "html2canvas": "1.4.1",
+    "qrcodejs": "1.0.0",
+    "fontsource": "5.3.0"
+  }
+}

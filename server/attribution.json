@@ -1,0 +1,52 @@
+[
+  {
+    "asset": "ship_in_clouds.glb",
+    "title": "Ship in Clouds",
+    "creator": "Bastien Genbrugge",
+    "creator_url": "https://sketchfab.com/bastienBGR",
+    "source": "https://sketchfab.com/3d-models/ship-in-clouds-c475323dc7f24e26ba2009c08c8e1941",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "notice": "Modified for web delivery."
+  },
+  {
+    "asset": "old__ancient_scroll.glb",
+    "title": "Old / Ancient Scroll",
+    "creator": "Kigha",
+    "creator_url": "https://sketchfab.com/Kigha",
+    "source": "https://sketchfab.com/3d-models/old-ancient-scroll-73e9333251c7490786f99e67beb41d6e",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "notice": "Modified for web delivery."
+  },
+  {
+    "asset": "moon.glb",
+    "title": "Moon",
+    "creator": "Akshat (shooter24994)",
+    "creator_url": "https://sketchfab.com/shooter24994",
+    "source": "https://sketchfab.com/3d-models/moon-4db2273f6dd943b8ad7fa5e3b1b2431a",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "notice": "Modified for web delivery."
+  },
+  {
+    "asset": "bird.glb",
+    "title": "Bird",
+    "creator": "Blender Artist (moizmuhammad373)",
+    "creator_url": "https://sketchfab.com/moizmuhammad373",
+    "source": "https://sketchfab.com/3d-models/bird-e93a906eb38343c4a14458a637136329",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "notice": "Modified for web delivery."
+  },
+  {
+    "asset": "kaykit_mage.glb",
+    "title": "KayKit Character Pack: Adventurers — Mage",
+    "creator": "Kay Lousberg (KayKit)",
+    "creator_url": "https://kaylousberg.com/",
+    "source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "notice": "Animation set trimmed and compressed for web delivery."
+  }
+]

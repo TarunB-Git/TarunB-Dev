@@ -1,0 +1,52 @@
+services:
+  portfolio:
+    build: .
+    restart: unless-stopped
+    environment:
+      ADMIN_PASSPHRASE: ${ADMIN_PASSPHRASE:?Set ADMIN_PASSPHRASE}
+      PORTFOLIO_BASE_URL: ${PORTFOLIO_BASE_URL:?Set PORTFOLIO_BASE_URL, including https://}
+      PORTFOLIO_ALLOWED_ORIGINS: ${PORTFOLIO_BASE_URL}
+      PORTFOLIO_TRUST_PROXY_HEADERS: "true"
+    volumes:
+      - portfolio-data:/data
+      - portfolio-backups:/data/backups
+    networks: [web]
+
+  maintenance:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "server.maintenance"]
+    depends_on:
+      portfolio:
+        condition: service_healthy
+    environment:
+      PORTFOLIO_BASE_URL: ${PORTFOLIO_BASE_URL:?Set PORTFOLIO_BASE_URL, including https://}
+    volumes:
+      - portfolio-data:/data
+      - portfolio-backups:/data/backups
+    networks: [web]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on: [portfolio]
+    environment:
+      PORTFOLIO_DOMAIN: ${PORTFOLIO_DOMAIN:?Set PORTFOLIO_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [web]
+
+volumes:
+  portfolio-data:
+  portfolio-backups:
+  caddy-data:
+  caddy-config:
+
+networks:
+  web:

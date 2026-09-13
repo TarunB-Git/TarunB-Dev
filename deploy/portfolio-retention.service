@@ -1,0 +1,8 @@
+[Unit]
+Description=Apply four-path portfolio privacy retention
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/four-path-portfolio
+EnvironmentFile=/opt/four-path-portfolio/.env
+ExecStart=/usr/bin/docker compose exec -T portfolio python -m server.ops retention

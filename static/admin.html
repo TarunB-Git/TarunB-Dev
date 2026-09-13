@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<title>Portfolio Admin</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#0b0d12;color:#cdd3e0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;min-height:100vh}
+a{color:#7ea6ff}
+button{cursor:pointer;font-family:'Inter',sans-serif}
+input,textarea,select{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.8rem;background:#12151d;border:1px solid #232a38;border-radius:7px;color:#dde3f0;padding:8px 11px;outline:none;width:100%}
+input:focus,textarea:focus,select:focus{border-color:#6885bd;box-shadow:0 0 0 2px rgba(104,133,189,.15)}
+textarea{resize:vertical}
+.hidden{display:none!important}
+
+/* login */
+#login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+#login input{width:280px;text-align:center}
+#login button{padding:9px 26px;background:#1a2436;border:1px solid #2c3a54;border-radius:7px;color:#a8bce0;font-size:.78rem;letter-spacing:.1em}
+#login button:hover{background:#223050}
+#login .err{color:#d06060;font-size:.7rem;font-family:'IBM Plex Mono',monospace;min-height:1em}
+#login .login-help{width:min(420px,calc(100vw - 40px));margin:2px 0 0;text-align:center;color:#66738c;font:400 .64rem/1.6 'IBM Plex Mono',monospace}
+
+/* shell */
+#shell{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+header{display:flex;align-items:center;gap:18px;margin-bottom:26px}
+header h1{font-family:'IBM Plex Mono',monospace;font-size:1rem;letter-spacing:.2em;color:#8fa3c8}
+header .sp{flex:1}
+header button{background:none;border:1px solid #2a3040;border-radius:6px;color:#8090aa;padding:6px 14px;font-size:.7rem}
+nav{display:flex;gap:6px;margin-bottom:26px;flex-wrap:wrap}
+nav button{padding:8px 18px;background:#12151d;border:1px solid #232a38;border-radius:8px;color:#8fa0be;font-size:.74rem;letter-spacing:.06em}
+nav button.on{background:#1c2436;color:#cdd9f0;border-color:#3a4a68}
+.readiness{display:flex;gap:12px;align-items:flex-start;margin:0 0 20px;padding:13px 15px;border:1px solid #594b28;border-radius:10px;background:#1d1910;color:#d1bb7a;font:400 .68rem/1.6 'IBM Plex Mono',ui-monospace,monospace}.readiness.ready{border-color:#28543a;background:#101c15;color:#88cba1}.readiness strong{white-space:nowrap}.readiness ul{margin-left:18px}
+.panel{display:none}
+.panel.on{display:block}
+.card{background:#101319;border:1px solid #1e2430;border-radius:12px;padding:20px;margin-bottom:16px}
+.card h3{font-size:.8rem;color:#9fb2d4;letter-spacing:.08em;margin-bottom:12px;text-transform:uppercase;font-family:'IBM Plex Mono',monospace}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row+.row{margin-top:10px}
+.grow{flex:1;min-width:140px}
+.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:180px}.field>span,.check>span{font:500 .58rem 'IBM Plex Mono',ui-monospace,monospace;color:#72809d;text-transform:uppercase;letter-spacing:.08em}.field.required>span::after,.check.required>span::after{content:' *';color:#d08080}.field.wide{flex-basis:100%}.field.narrow{max-width:180px}.check{display:flex;align-items:center;gap:7px}.check input{width:auto}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid .wide{grid-column:1/-1}.section-head{display:flex;gap:10px;align-items:center;margin:18px 0 9px}.section-head h4{font:500 .68rem 'IBM Plex Mono',ui-monospace,monospace;color:#8297bd;text-transform:uppercase;letter-spacing:.1em}.section-head::after{content:'';height:1px;flex:1;background:#1e2633}
+.btn{padding:8px 18px;background:#1a2436;border:1px solid #2c3a54;border-radius:7px;color:#a8bce0;font-size:.72rem;letter-spacing:.06em}
+.btn:hover{background:#223050}
+.btn:focus-visible{outline:2px solid #7ea6ff;outline-offset:2px}.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn.warn{border-color:#5a2c2c;color:#d09090;background:#241416}
+.btn.ok{border-color:#2c543a;color:#90d0a8;background:#142418}
+.btn.ghost{background:transparent}.btn.sm{padding:5px 10px;font-size:.63rem}
+.note{font-family:'IBM Plex Mono',monospace;font-size:.66rem;color:#5f6c85;margin-top:8px;min-height:1em}
+.note.error{color:#e08b8b}.note.success{color:#83c69b}
+.list-item{display:flex;gap:10px;align-items:flex-start;padding:12px 0;border-top:1px solid #1a2028}
+.list-item .meta{font-family:'IBM Plex Mono',monospace;font-size:.64rem;color:#5f6c85;margin-bottom:4px}
+.list-item .body{flex:1;font-size:.8rem;line-height:1.6;min-width:0;overflow-wrap:anywhere}
+.badge{display:inline-block;padding:1px 9px;border-radius:9px;font-size:.6rem;font-family:'IBM Plex Mono',monospace;border:1px solid #2c3a54;color:#8fa0be;margin-right:6px;text-transform:uppercase;letter-spacing:.08em}
+.badge.pending{border-color:#6a5220;color:#d0b060}
+table{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:.7rem}
+td,th{padding:6px 10px;border-bottom:1px solid #1a2028;text-align:left;color:#9aa8c4}
+th{color:#647294;font-weight:400;text-transform:uppercase;font-size:.6rem;letter-spacing:.1em}
+.repeat-list{display:grid;gap:9px}.repeat-item{display:grid;grid-template-columns:25px minmax(0,1fr) auto;gap:9px;align-items:start;padding:11px;border:1px solid #1d2531;border-radius:9px;background:#0d1016}.repeat-item.dragging,.period-card.dragging,.event-card.dragging{opacity:.45}.drag{padding:8px 3px;border:0;background:transparent;color:#52617d;cursor:grab}.repeat-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.repeat-body .wide{grid-column:1/-1}.repeat-actions{display:flex;flex-direction:column;gap:5px}.repeat-actions button{width:28px;height:28px;border:1px solid #293448;border-radius:6px;background:#151b25;color:#8294b4}.editor-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:15px;padding-top:13px;border-top:1px solid #1b222d}.editor-actions .note{margin:0}.period-card{border-left:3px solid #314468}.period-header{display:flex;gap:9px;align-items:center;margin-bottom:12px}.period-header .drag{font-size:1.1rem}.period-header .period-label{font-size:.9rem;font-weight:600}.period-header .spacer{flex:1}.event-list{display:grid;gap:9px}.event-card{border:1px solid #1d2735;border-radius:10px;background:#0c1017}.event-summary{display:flex;gap:9px;align-items:center;padding:11px}.event-summary strong{font-size:.76rem;color:#aebbd2}.event-summary .meta{margin:0;flex:1}.event-fields{padding:0 12px 13px;border-top:1px solid #1a222e}.event-fields[hidden]{display:none}.layout-preview{min-height:120px;margin-top:10px;border:1px dashed #2b3950;border-radius:10px;padding:15px;background:radial-gradient(circle at 50% 50%,#192234,#0c1017);display:grid;place-items:center}.layout-preview article{max-width:310px;padding:12px;border:1px solid #4b658f;border-radius:10px;background:#111a29}.link-row{display:grid;grid-template-columns:120px 1fr 1.3fr auto;gap:7px;margin-top:7px}.media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}.media-item{border:1px solid #202a39;border-radius:10px;padding:10px;background:#0d1118}.media-item img,.media-item video{width:100%;height:120px;object-fit:cover;border-radius:7px;background:#080a0e}.media-item .meta{font-size:.6rem;margin:7px 0}.upload-drop{display:grid;place-items:center;min-height:130px;border:1px dashed #354865;border-radius:10px;background:#0d1118;text-align:center;padding:18px}.upload-drop.dragover{border-color:#7ea6ff;background:#111a28}.moderation-actions{display:flex;gap:6px;flex-wrap:wrap}.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px}.stat{padding:15px;border:1px solid #202a39;border-radius:9px;background:#0d1118}.stat .value{font-size:1.45rem;color:#b8c8e6}.stat .label{font:500 .58rem 'IBM Plex Mono',monospace;color:#61718e;text-transform:uppercase;letter-spacing:.1em}.empty{padding:20px;text-align:center;color:#596780;font:400 .7rem 'IBM Plex Mono',monospace}.rev-list{display:grid;gap:8px}.rev{display:flex;gap:10px;align-items:center;padding:10px;border:1px solid #202938;border-radius:8px}.rev .body{flex:1}.legal-warning{padding:10px 12px;border-left:3px solid #8a6e2e;background:#1b170d;color:#bda76f;font-size:.72rem;line-height:1.6;margin-bottom:13px}
+.period-slug{max-width:180px}
+dialog{width:min(720px,calc(100vw - 30px));max-height:86vh;overflow:auto;padding:0;border:1px solid #34445f;border-radius:14px;background:#0e1219;color:#dce2ee;box-shadow:0 40px 100px #000}dialog::backdrop{background:rgba(0,0,0,.74)}.dialog-inner{position:relative;padding:24px}.dialog-close{position:absolute;right:12px;top:10px;width:34px;height:34px;border:0;background:transparent;color:#8898b4;font-size:1.3rem}.preview-copy{font-size:.85rem;line-height:1.8;white-space:pre-wrap}.preview-copy h2{color:#9db5df;margin-bottom:8px}
+@media(max-width:700px){#shell{padding-inline:12px}header{flex-wrap:wrap;gap:10px}header h1{flex:1 0 100%}header .sp{display:none}header a,header button{white-space:nowrap}.form-grid,.repeat-body{grid-template-columns:1fr}.form-grid .wide,.repeat-body .wide{grid-column:auto}.link-row{grid-template-columns:1fr}.list-item{flex-direction:column}.moderation-actions{width:100%}.period-header{align-items:flex-start;flex-wrap:wrap}nav{flex-wrap:nowrap;overflow-x:auto;padding-bottom:5px}nav button{white-space:nowrap}}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h1 id="login-title" style="font-family:'IBM Plex Mono',monospace;font-size:.85rem;letter-spacing:.3em;color:#5f6c85">OWNER ACCESS</h1>
+  <label id="pass-label" for="pass" style="font:500 .62rem 'IBM Plex Mono',ui-monospace,monospace;color:#71809b;letter-spacing:.12em;text-transform:uppercase">Owner passphrase</label>
+  <input id="pass" type="password" placeholder="passphrase" autocomplete="current-password">
+  <label id="confirm-label" class="hidden" for="pass-confirm" style="font:500 .62rem 'IBM Plex Mono',ui-monospace,monospace;color:#71809b;letter-spacing:.12em;text-transform:uppercase">Confirm passphrase</label>
+  <input id="pass-confirm" class="hidden" type="password" placeholder="repeat passphrase" autocomplete="new-password">
+  <button id="login-btn">enter</button>
+  <div class="err" id="login-err" role="alert" aria-live="polite"></div>
+  <p class="login-help" id="login-help">The passphrase is stored as a one-way hash. It can be replaced without deleting portfolio content.</p>
+</div>
+
+<div id="shell" class="hidden">
+  <header>
+    <h1>SITE ADMIN</h1>
+    <div class="sp"></div>
+    <a href="/" style="font-size:.72rem">view site ↗</a>
+    <button id="revoke">revoke sessions</button>
+    <button id="logout">log out</button>
+  </header>
+  <div id="readiness" class="readiness" role="status" aria-live="polite"><strong>Launch check</strong><span>Checking required content…</span></div>
+  <nav>
+    <button data-p="setup" class="on">Setup &amp; Legal</button>
+    <button data-p="card">Card</button>
+    <button data-p="resume">Resume</button>
+    <button data-p="work">Projects &amp; Work</button>
+    <button data-p="timelines">Timelines</button>
+    <button data-p="media">Files &amp; Media</button>
+    <button data-p="blog">Posts</button>
+    <button data-p="comments">Comments</button>
+    <button data-p="messages">Messages</button>
+    <button data-p="stats">Stats</button>
+    <button data-p="revisions">Revisions</button>
+  </nav>
+
+  <div class="panel on" id="p-setup"></div>
+  <div class="panel" id="p-card"></div>
+  <div class="panel" id="p-resume"></div>
+  <div class="panel" id="p-work"></div>
+  <div class="panel" id="p-timelines"></div>
+  <div class="panel" id="p-media"></div>
+  <div class="panel" id="p-blog"></div>
+  <div class="panel" id="p-comments"></div>
+  <div class="panel" id="p-messages"></div>
+  <div class="panel" id="p-stats"></div>
+  <div class="panel" id="p-revisions"></div>
+</div>
+
+<dialog id="admin-dialog" aria-labelledby="admin-dialog-title"><div class="dialog-inner"></div></dialog>
+
+<script type="module" src="/static/js/admin.js"></script>
+</body>
+</html>

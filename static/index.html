@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Choose Your Path</title>
+<meta name="description" content="An interactive four-path portfolio: recruiter, friend, curious viewer, or personal.">
+<meta name="theme-color" content="#03050c">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/vendor/fonts/fonts.css">
+<script type="importmap">{"imports":{"three":"/static/vendor/three/build/three.module.js","three/addons/":"/static/vendor/three/examples/jsm/"}}</script>
+<script defer src="/static/vendor/qrcodejs/qrcode.min.js"></script>
+<script defer src="/static/vendor/html2canvas/html2canvas.min.js"></script>
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/world.css">
+<link rel="stylesheet" href="/static/css/card.css">
+<link rel="stylesheet" href="/static/css/timeline.css">
+<link rel="stylesheet" href="/static/css/friend.css">
+<link rel="stylesheet" href="/static/css/paths.css">
+<link rel="stylesheet" href="/static/css/blog.css">
+<link rel="stylesheet" href="/static/css/redesign.css">
+<link rel="stylesheet" href="/static/css/graybox.css">
+<link rel="stylesheet" href="/static/css/directory.css">
+</head>
+<body>
+
+<div id="cur"></div>
+<div id="cur-ring"></div>
+<canvas id="flame-canvas"></canvas>
+<div id="ov"></div>
+
+<!-- ══ LOADING ══ -->
+<div id="s-loading">
+  <div class="ld-mode-icon"><img id="ld-mode-img" src="/static/assets/ui/device.png" alt=""><span class="ld-txt" id="ld-txt">Device</span></div>
+  <div class="ld-meter" aria-hidden="true"><span></span></div>
+</div>
+
+<!-- First visit: choose the tone before choosing a destination. -->
+<section class="entry-choice" id="entry-choice" role="dialog" aria-modal="true" aria-labelledby="entry-choice-title" hidden>
+  <div class="entry-choice-clouds" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <div class="entry-choice-core">
+    <p id="entry-choice-title">Choose</p>
+    <div class="entry-choice-orbit">
+      <button class="entry-choice-option entry-choice-world" type="button" data-entry-mode="world">
+        <img src="/static/assets/ui/cloud.png" alt="" width="24" height="24">
+        <strong>Cloud</strong>
+      </button>
+      <button class="entry-choice-option entry-choice-directory" type="button" data-entry-mode="directory">
+        <img src="/static/assets/ui/device.png" alt="" width="24" height="24">
+        <strong>Device</strong>
+      </button>
+    </div>
+    <small class="entry-choice-time" id="entry-choice-time">Device opens in 10</small>
+  </div>
+</section>
+
+<!-- ══ DIRECTORY — default landing ══ -->
+<main class="stage directory-stage" id="s-directory" aria-label="Portfolio Device">
+  <div class="directory-topbar"><button class="directory-brand" id="directory-brand" type="button" aria-expanded="false">Portfolio OS</button><button id="directory-clock" type="button" aria-label="Open calendar" aria-expanded="false"></button></div>
+  <div class="directory-wallpaper" aria-hidden="true"><i></i><i></i></div>
+  <div class="directory-desktop-icons" id="directory-desktop-icons" aria-label="Desktop shortcuts"></div>
+  <section class="directory-window" id="directory-window" tabindex="-1" aria-label="Files">
+    <header class="directory-titlebar" id="directory-titlebar"><strong><span aria-hidden="true">▰</span> Files</strong><div class="directory-window-controls" aria-label="Window controls"><button type="button" data-window-action="minimize" aria-label="Minimize window">−</button><button type="button" data-window-action="maximize" aria-label="Toggle full screen">□</button><button class="window-close" type="button" data-window-action="close" aria-label="Close window">×</button></div></header>
+    <div class="directory-toolbar"><button type="button" id="directory-back" data-directory-action="back" aria-label="Back">‹</button><button type="button" id="directory-forward" data-directory-action="forward" aria-label="Forward">›</button><input id="directory-location" aria-label="Location" spellcheck="false" value="/home/guest/Desktop"></div>
+    <div class="directory-body"><aside class="directory-sidebar" aria-label="Places"><strong>Places</strong><button type="button" data-directory-location="/home/guest">⌂ Home</button><button type="button" data-directory-location="/home/guest/Desktop">▣ Desktop</button><button type="button" data-directory-location="/home/guest/Downloads">⇩ Downloads</button><button type="button" data-directory-location="/home/guest/Pictures">▧ Pictures</button><button type="button" data-directory-location="/home/guest/Trash">♲ Trash</button></aside><div class="directory-files" id="directory-files" role="group" aria-label="Folder contents"></div></div>
+    <footer class="directory-status"><span id="directory-item-count">0 items</span><span id="directory-help">Select an item to open it.</span></footer>
+  </section>
+  <nav class="directory-dock" aria-label="Open windows">
+    <button class="directory-dock-item is-running" id="directory-dock-files" type="button" data-directory-action="restore" aria-label="Show Files"><span aria-hidden="true">▰</span><small>Files</small></button>
+    <button class="directory-dock-item" id="directory-dock-document" type="button" data-directory-action="restore-document" aria-label="Show document" hidden><span aria-hidden="true">≡</span><small>Document</small></button>
+    <button class="directory-dock-item" id="directory-dock-path" type="button" data-directory-action="focus-path" aria-label="Show portfolio path" hidden><span aria-hidden="true">◇</span><small>Path</small></button>
+  </nav>
+  <section class="directory-document-window" id="directory-document-window" hidden aria-label="Document viewer"><header class="directory-titlebar" id="document-titlebar"><strong id="document-window-title">Document</strong><div class="directory-window-controls"><button type="button" data-document-action="minimize" aria-label="Minimize document">−</button><button type="button" data-document-action="maximize" aria-label="Toggle document full screen">□</button><button class="window-close" type="button" data-document-action="close" aria-label="Close document">×</button></div></header><article id="directory-document-content" tabindex="0"></article></section>
+  <section class="directory-overview" id="directory-overview" hidden aria-label="Activities overview"><button type="button" class="overview-workspace" data-directory-action="focus-files"><span>Files</span><i>Portfolio folders</i></button><button type="button" class="overview-workspace overview-world" data-directory-action="open-world"><span>Cloud</span><i>Enter the cloud</i></button></section>
+  <aside class="directory-calendar" id="directory-calendar" hidden aria-label="Calendar"><header><strong id="calendar-month"></strong><span>Europe/Stockholm</span></header><div id="calendar-grid"></div><a id="directory-book-call" href="/recruiter#contact">Book a call</a></aside>
+</main>
+
+<section class="webgl-notice" id="webgl-notice" role="status" aria-labelledby="webgl-notice-title" hidden>
+  <strong id="webgl-notice-title">Cloud mode cannot run in this browser.</strong>
+  <p>WebGL or hardware acceleration is unavailable. Opening Device mode so every portfolio path remains usable.</p>
+  <button type="button" data-shell-mode="directory">Open Device now</button>
+</section>
+
+<div class="experience-switch" id="experience-switch" role="group" aria-label="Portfolio mode"><button type="button" data-shell-mode="directory">Device</button><button type="button" data-shell-mode="world">Cloud</button></div>
+<aside class="landscape-prompt" id="landscape-prompt"><span>Turn your phone sideways for the best experience.</span><button type="button" data-action="dismiss-landscape" aria-label="Dismiss">×</button></aside>
+
+<!-- ══ THE WORLD — optional exploratory landing ══ -->
+<div class="stage" id="s-world">
+  <canvas id="three-canvas"></canvas>
+  <div id="world-ui">
+    <div id="world-fallback-art" aria-hidden="true">
+      <svg viewBox="0 0 960 430" role="presentation">
+        <defs>
+          <linearGradient id="fallback-sail" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#e8e5dc" stop-opacity=".92"/>
+            <stop offset="1" stop-color="#909ba8" stop-opacity=".5"/>
+          </linearGradient>
+          <linearGradient id="fallback-hull" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4c4540"/><stop offset="1" stop-color="#17191d"/>
+          </linearGradient>
+          <filter id="fallback-cloud"><feGaussianBlur stdDeviation="7"/></filter>
+        </defs>
+        <g fill="#b9c2ca" opacity=".22" filter="url(#fallback-cloud)">
+          <ellipse cx="248" cy="300" rx="175" ry="55"/><ellipse cx="460" cy="327" rx="238" ry="68"/>
+          <ellipse cx="714" cy="296" rx="190" ry="58"/><ellipse cx="535" cy="260" rx="176" ry="52"/>
+        </g>
+        <g transform="translate(326 82)">
+          <path d="M58 181h318c-19 48-65 74-154 79-79-2-133-28-164-79Z" fill="url(#fallback-hull)"/>
+          <path d="M92 184c56 18 167 20 251 0" fill="none" stroke="#d7c590" stroke-opacity=".52"/>
+          <path d="M215 22v160M310 74v108" stroke="#b8a779" stroke-width="4"/>
+          <path d="M207 34C148 60 118 105 107 166h100V34Z" fill="url(#fallback-sail)"/>
+          <path d="M223 42c56 28 82 69 86 124h-86V42Z" fill="url(#fallback-sail)" opacity=".78"/>
+          <path d="M318 84c34 22 53 49 58 82h-58V84Z" fill="url(#fallback-sail)" opacity=".58"/>
+          <path d="M56 181 215 22l164 159" fill="none" stroke="#d8d5ca" stroke-opacity=".22"/>
+        </g>
+      </svg>
+    </div>
+    <div id="w-prompt">
+      <span class="world-eyebrow">Cloud</span>
+      <h2 id="w-prompt-h">Explore the cloud.</h2>
+      <p id="w-prompt-p">Move through the world. Approach anything that catches your eye.</p>
+    </div>
+    <div id="world-status" class="sr-only" role="status" aria-live="polite"></div>
+    <div id="moon-msg">&nbsp;<span></span></div>
+    <div id="moon-hint">✦ click ✦</div>
+    <a class="world-legal" href="/legal">© · legal &amp; credits</a>
+    <button class="world-home" type="button" data-action="home">⌂ Device</button>
+  </div>
+  <noscript><p class="noscript-paths">JavaScript is unavailable. Visit <a href="/recruiter">recruiter</a>, <a href="/friend">friend</a>, <a href="/viewer">viewer</a>, or <a href="/personal">personal</a>.</p></noscript>
+</div>
+
+<section class="directory-app-window" id="directory-app-window" aria-label="Portfolio window">
+ <header class="directory-titlebar app-titlebar" id="app-titlebar"><strong id="app-window-title">Portfolio</strong><div class="directory-window-controls"><button type="button" data-app-action="minimize" aria-label="Minimize portfolio window">−</button><button type="button" data-app-action="maximize" aria-label="Toggle portfolio full screen">□</button><button class="window-close" type="button" data-app-action="close" aria-label="Close portfolio window">×</button></div></header>
+ <div class="directory-app-content">
+<!-- ══ RECRUITER PATH — the business card ══ -->
+<div class="ps" id="ps-recruiter">
+ <div id="amb"></div>
+ <div id="rec-cosmos" aria-hidden="true"><i></i><i></i><i></i></div>
+ <div id="rec-birds" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+ <div class="rec-scroll" id="rec-scroll">
+  <div id="hero">
+    <div id="cardWrap">
+      <div class="scene">
+        <div class="cw" id="cw">
+          <div class="cf" id="cfront">
+            <div class="holo" id="holo"></div>
+            <div class="grain"></div>
+            <div class="cg" id="cg">
+              <div class="cg-pre" id="cgpre"></div>
+              <div class="cg-name"><span id="cgname"></span><span class="cur-blink" id="cgcur"></span></div>
+            </div>
+            <div class="cfi" id="cfi">
+              <div class="toprow">
+                <div class="apill" id="apill"><div class="adot"></div><span id="apill-views">— views</span></div>
+                <span class="lupd" id="card-updated"></span>
+              </div>
+              <div class="srow"><div class="sdot"></div><span class="stxt" id="card-status"></span></div>
+              <div class="name" id="card-name"></div>
+              <div class="role" id="role">██████ ███████ ████████</div>
+              <div class="chips" id="card-chips"></div>
+              <div class="contacts">
+                <div class="ci">
+                  <a class="cv" id="card-email" href="#"></a>
+                  <div class="cbs"><button class="ib" type="button" data-action="copy-email" title="Copy email" aria-label="Copy email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+                </div>
+                <div class="ci">
+                  <a class="cv" id="card-phone" href="#"></a>
+                  <div class="cbs">
+                    <button class="ib" type="button" data-action="copy-phone" title="Copy phone" aria-label="Copy phone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                    <button class="ib" type="button" data-action="download-vcard" title="Save contact" aria-label="Save contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+                  </div>
+                </div>
+              </div>
+              <div class="acts">
+                <button class="ab gd" type="button" data-action="open-resume">Resume ↗</button>
+                <button class="ab" type="button" data-action="open-share">Share</button>
+                <a class="ab" id="cal-btn" href="#" target="_blank" rel="noopener noreferrer">Book a Chat</a>
+                <button class="fhint" id="fhint" type="button" aria-label="Show the back of the business card">flip →</button>
+              </div>
+            </div>
+          </div>
+          <div class="cf cf-back" id="cback">
+            <div class="back-aurora"></div>
+            <div class="holo" id="holo2"></div>
+            <div class="grain"></div>
+            <div class="cbi">
+              <div class="tagline" id="card-tagline"></div>
+              <div class="logos" id="card-logos"></div>
+              <div class="rec">
+                <div class="rq" id="rq"></div>
+                <div class="ra" id="ra"></div>
+              </div>
+              <div class="bbot">
+                <button class="bhint" id="bhint" type="button" aria-label="Show the front of the business card">← flip</button>
+                <div id="qrc"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="below" id="below">
+      <button class="rtog" id="rtog" type="button" data-action="toggle-mode"><span class="rtlbl">Recruiter Mode</span><span class="togtrack" aria-hidden="true"></span></button>
+      <button class="statslink" type="button" data-action="open-stats">↗ Public Stats</button>
+    </div>
+    <a class="world-return site-home" href="/">⌂ Device</a>
+  </div>
+
+  <div id="page">
+    <section class="psec">
+      <div class="sec-label rec-timeline-label"><span>Work Timeline <span class="sample-note" id="rec-timeline-sample">Sample content</span></span><label class="rec-timeline-filter" for="rec-timeline-filter">Show <select id="rec-timeline-filter"><option value="important">Important events</option><option value="all">All events</option></select></label></div>
+      <div id="rec-timeline"></div>
+    </section>
+    <section class="psec light-only">
+      <div class="sec-label">Selected Work</div>
+      <div id="sw-list"></div>
+    </section>
+    <section class="psec light-only">
+      <div class="sec-label">Career</div>
+      <div class="ctl" id="career-list"></div>
+    </section>
+    <section class="psec rec-news-section">
+      <div class="sec-label">News <span class="sample-note">Timeline notebook</span></div>
+      <div id="rec-news" class="rec-news-notepad" tabindex="0" aria-label="All work timeline events" aria-live="polite"></div>
+    </section>
+    <section class="psec rec-orbit-section" id="rec-notable-section">
+      <div class="sec-label"><span id="rec-notable-heading">Notable Projects &amp; Publications</span></div>
+      <div class="rec-notable-grid" id="rec-notable-grid"></div>
+      <button class="rec-notable-toggle" id="rec-notable-toggle" type="button" aria-expanded="false">Read more</button>
+    </section>
+    <section class="psec">
+      <div class="sec-label">Writings</div>
+      <div id="rec-posts" class="blog-compact"></div>
+    </section>
+    <section class="psec">
+      <div class="sec-label">Recruiter Wall</div>
+      <div id="rec-wall" class="wall-scroll" tabindex="0" aria-label="Recruiter wall messages"></div>
+      <div id="rec-msgbox"></div>
+    </section>
+    <div class="sec-foot" id="rec-foot"></div>
+    <div class="legal-foot"><a href="/legal">legal</a> · <a href="/legal#attribution">credits</a> · <a href="/legal#privacy">privacy</a></div>
+  </div>
+ </div>
+
+ <div id="mini">
+  <div class="mini-bar">
+    <div class="mini-sdot"></div>
+    <span class="mini-name" id="mini-name"></span>
+    <div class="mini-sep"></div>
+    <span class="mini-role" id="mini-role"></span>
+    <div class="mini-acts">
+      <a class="mab gd" href="/resume" data-action="open-resume">Resume</a>
+      <a class="mab" id="mini-cal" href="#" target="_blank">Book Chat</a>
+      <a class="mab" href="/" data-action="home">Home</a>
+    </div>
+  </div>
+ </div>
+</div>
+
+<!-- ══ FRIEND PATH ══ -->
+<div class="ps" id="ps-friend">
+  <canvas id="frnd-fx"></canvas>
+  <a class="frnd-back-btn site-home" href="/">⌂ Device</a>
+  <div id="frnd-ui">
+
+    <div class="frnd-phase hide" id="frnd-unroll" hidden aria-hidden="true" inert>
+      <div class="unroll-stage">
+        <div class="unroll-paper moon-gateway" id="unroll-paper">
+          <div id="unroll-glyphs"></div>
+          <div id="unroll-story" aria-hidden="true">
+            <span>The moon keeps what daylight loses</span>
+            <h2>Every memory changes in moonlight.</h2>
+            <p>Names return as constellations. Places become tides. Small moments find their orbit.</p>
+          </div>
+        </div>
+        <div class="unroll-roll left"></div>
+        <div class="unroll-roll right"></div>
+      </div>
+      <div class="unroll-hint">the fallen moon is opening…</div>
+    </div>
+
+    <div class="frnd-phase hide" id="frnd-bamboo-intro" hidden aria-hidden="true" inert>
+      <div id="bamboo-wrap"><div id="gold-rope"></div><div id="fringe-row"></div></div>
+      <div id="bamboo-welcome">
+        <div class="w-main">THE TRIALS</div>
+        <div class="w-sub">✦ &nbsp; PROVE YOURSELF, “FRIEND” &nbsp; ✦</div>
+      </div>
+    </div>
+
+    <div class="frnd-phase hide" id="frnd-test-panel" hidden aria-hidden="true" inert>
+      <div>
+        <div class="frnd-trial-label" id="frnd-trial-label">Trial I of IV</div>
+        <div class="frnd-trial-num" id="frnd-trial-prompt">The first trial.</div>
+        <div class="frnd-trial-sub" id="frnd-trial-sub">Choose the slip that calls to you.</div>
+      </div>
+      <div id="frnd-slips-stage"></div>
+      <div class="frnd-hover-hint">hover to see · click to choose</div>
+    </div>
+
+    <div class="frnd-phase hide" id="frnd-wrong-panel" hidden aria-hidden="true" inert role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="frnd-wrong-tag">✦ &nbsp; Oops — wrong guess &nbsp; ✦</div>
+      <div id="frnd-wrong-msg"></div>
+      <button class="frnd-continue-btn" id="frnd-continue-btn">— Next Test —</button>
+    </div>
+
+    <div class="frnd-phase hide" id="frnd-reveal-panel" hidden aria-hidden="true" inert>
+      <div id="frnd-reveal-text"></div>
+      <button class="frnd-enter-btn" id="frnd-enter-btn" type="button" data-action="friend-content">✦ &nbsp; Enter the Keep &nbsp; ✦</button>
+    </div>
+
+    <div class="frnd-phase hide" id="frnd-content-panel" hidden aria-hidden="true" inert>
+      <div class="path-relic lunar-relic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="frnd-c-header">
+        <div class="gate-text">The moon keeps the stories.</div>
+        <h1>What stayed in orbit.</h1>
+        <div class="frnd-c-sub">Friends, places, shared obsessions, and the memories that still pull at the tide.</div>
+      </div>
+      <div class="frnd-section-label">Across the years</div>
+      <div id="frnd-timeline"></div>
+      <div class="frnd-section-label">People in orbit</div>
+      <div class="path-card-grid" id="frnd-people"></div>
+      <div class="frnd-section-label">Shared constellations</div>
+      <div class="path-card-grid" id="frnd-shared-projects"></div>
+      <div class="frnd-section-label">Notes from friends</div>
+      <div id="frnd-wall" class="wall-scroll" tabindex="0" aria-label="Friend wall messages"></div>
+      <div class="frnd-section-label">Writing worth sharing</div>
+      <div id="frnd-posts" class="blog-compact"></div>
+      <div class="frnd-section-label">Leave a note</div>
+      <div id="frnd-msgbox"></div>
+      <div class="legal-foot"><a href="/legal">legal</a> · <a href="/legal#attribution">credits</a> · <a href="/legal#privacy">privacy</a></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ VIEWER PATH ══ -->
+<div class="ps" id="ps-viewer">
+ <div class="view-wrap" id="view-wrap">
+  <div class="view-header">
+    <div class="path-relic ship-relic" aria-hidden="true"><span></span><i></i><i></i><i></i></div>
+    <div class="rune-deco">The ship in the clouds</div>
+    <h1>The person behind the work.</h1>
+    <p class="opener">What I care about, where I came from,<br>and what keeps me curious.</p>
+  </div>
+  <div id="view-timeline"></div>
+  <div class="view-section-label">Recent logbook entries</div>
+  <p class="path-section-note">Open an entry to read it and join its conversation.</p>
+  <div id="view-posts" class="blog-compact blog-title-reel"></div>
+  <a class="view-back site-home" href="/">⌂ Device</a>
+  <div class="legal-foot"><a href="/legal">legal</a> · <a href="/legal#attribution">credits</a> · <a href="/legal#privacy">privacy</a></div>
+ </div>
+</div>
+
+<!-- ══ PERSONAL PATH ══ -->
+<div class="ps" id="ps-personal">
+  <a class="pers-back site-home" href="/">⌂ Device</a>
+  <div id="pers-scroll-opening" hidden aria-hidden="true" inert>
+    <div class="scroll-opening-stage" aria-hidden="true">
+      <i class="scroll-roller left"></i>
+      <div class="scroll-opening-sheet">
+        <span>LIBRARY &amp; NOTES</span>
+        <h2>Reading, experiments, and work in progress.</h2>
+        <p>The scroll opens once, then becomes the timeline.</p>
+      </div>
+      <i class="scroll-roller right"></i>
+    </div>
+    <div class="scroll-opening-hint">Opening scroll…</div>
+    <button id="pers-skip-opening" type="button">Skip opening</button>
+  </div>
+  <div class="pers-wrap" id="pers-wrap">
+  <div class="pers-header">
+    <div class="path-relic scroll-relic" aria-hidden="true"><i></i><i></i></div>
+    <span class="pers-sword" aria-hidden="true">▤</span>
+    <h1>Library &amp; Notes</h1>
+    <p class="sub">Reading, experiments, milestones, and work in progress.</p>
+  </div>
+  <div class="pers-section-label">Timeline</div>
+  <div id="pers-timeline"></div>
+  <div class="pers-section-label">Books &amp; field notes</div>
+  <div class="path-card-grid" id="pers-reading-shelf"></div>
+  <div class="pers-section-label">Small projects</div>
+  <div class="path-card-grid" id="pers-projects"></div>
+  <div class="pers-section-label">Recent notes</div>
+  <div id="pers-blog"></div>
+  <div class="pers-section-label">Collective wall</div>
+  <div id="pers-wall" class="wall-scroll" tabindex="0" aria-label="Library wall messages"></div>
+  <div class="pers-section-label pers-write-label">Write on the wall</div>
+  <div id="pers-msgbox"></div>
+  <div class="legal-foot"><a href="/legal">legal</a> · <a href="/legal#attribution">credits</a> · <a href="/legal#privacy">privacy</a></div>
+ </div>
+</div>
+
+ </div>
+</section>
+
+<!-- ══ MODALS ══ -->
+<div class="mo" id="blog-mo" role="dialog" aria-modal="true" aria-label="Blog post" aria-hidden="true" inert>
+  <div class="blog-box" tabindex="-1"></div>
+</div>
+
+<div class="mo" id="rmo" role="dialog" aria-modal="true" aria-labelledby="rm-name" aria-hidden="true" inert>
+  <div class="rm-box" tabindex="-1">
+    <button class="xb" type="button" data-action="close-resume" aria-label="Close resume">×</button>
+    <div class="rn" id="rm-name"></div>
+    <div class="rstub" id="rm-stub"></div>
+    <div class="rsec">Experience</div>
+    <div id="rm-exp"></div>
+    <div class="rsec">Education</div>
+    <div id="rm-edu"></div>
+    <div class="rsec">Notable Work</div>
+    <div class="rd" id="rm-notable" style="line-height:1.9"></div>
+    <button class="rdl" type="button" data-action="download-resume">↓ Download PDF Resume</button>
+  </div>
+</div>
+
+<div class="mo" id="smo" role="dialog" aria-modal="true" aria-labelledby="share-title" aria-hidden="true" inert>
+  <div class="sm-box" tabindex="-1">
+    <button class="xb" type="button" data-action="close-share" aria-label="Close share card">×</button>
+    <div class="sm-t" id="share-title">Share Card</div><div class="sm-s">Choose a card tone</div>
+    <div class="swatches">
+      <button class="swatch act" type="button" aria-label="Midnight card" style="background:#0a0a1a" data-bg="#0a0a1a" data-fg="#fff4c8" data-sub="#c8bca8" data-action="pick-color"></button>
+      <button class="swatch" type="button" aria-label="Navy card" style="background:#0c1821" data-bg="#0c1821" data-fg="#d4c89e" data-sub="#607080" data-action="pick-color"></button>
+      <button class="swatch" type="button" aria-label="Forest card" style="background:#0d1a0e" data-bg="#0d1a0e" data-fg="#a8d4a0" data-sub="#608060" data-action="pick-color"></button>
+      <button class="swatch" type="button" aria-label="Burgundy card" style="background:#1c0c0e" data-bg="#1c0c0e" data-fg="#e0b0b0" data-sub="#806060" data-action="pick-color"></button>
+      <button class="swatch" type="button" aria-label="Umber card" style="background:#1a1510" data-bg="#1a1510" data-fg="#d4c49e" data-sub="#806050" data-action="pick-color"></button>
+      <button class="swatch" type="button" aria-label="Ivory card" style="background:#f0ece4;border-color:rgba(0,0,0,0.15)" data-bg="#f0ece4" data-fg="#3c2a10" data-sub="#908880" data-action="pick-color"></button>
+    </div>
+    <div class="sprev" id="sprev" style="background:#0a0a1a">
+      <div id="spn"></div>
+      <div id="spr"></div>
+    </div>
+    <div class="sbtns"><button class="sbn" type="button" data-action="copy-link">Copy Link</button><button class="sbn" type="button" data-action="share-linkedin">LinkedIn</button><button class="sbn hi" type="button" data-action="download-card">↓ Save PNG</button></div>
+  </div>
+</div>
+
+<div class="mo" id="stmo" role="dialog" aria-modal="true" aria-labelledby="stats-title" aria-hidden="true" inert>
+  <div class="st-box" tabindex="-1">
+    <button class="xb" type="button" data-action="close-stats" aria-label="Close public analytics">×</button>
+    <div class="st-t" id="stats-title">Public Analytics</div><div class="st-s">Consented events · All time · Visible to everyone</div>
+    <div class="stgrid">
+      <div class="stcard"><div class="stlbl">Total Views</div><div class="stval" id="st-views">—</div><div class="stsub" id="st-views-sub"></div></div>
+      <div class="stcard"><div class="stlbl">Resume Opens</div><div class="stval" id="st-resume">—</div><div class="stsub" id="st-resume-sub"></div></div>
+      <div class="stcard"><div class="stlbl">vCards Saved</div><div class="stval" id="st-vcard">—</div><div class="stsub" id="st-vcard-sub"></div></div>
+      <div class="stcard"><div class="stlbl">Shares</div><div class="stval" id="st-shares">—</div><div class="stsub" id="st-shares-sub"></div></div>
+      <div class="stcard"><div class="stlbl">Booking Clicks</div><div class="stval" id="st-bookings">—</div><div class="stsub" id="st-bookings-sub"></div></div>
+      <div class="stcard"><div class="stlbl">Card Flips</div><div class="stval" id="st-card-flips">—</div><div class="stsub" id="st-card-flips-sub"></div></div>
+      <div class="stcard"><div class="stlbl">Paths Walked</div><div class="stval" id="st-paths">—</div><div class="stsub" id="st-paths-sub"></div></div>
+    </div>
+    <div class="stbar">
+      <div class="stbarlbl"><span>Path Split</span><span>All time</span></div>
+      <div id="st-path-split"></div>
+    </div>
+    <div class="stbar">
+      <div class="stbarlbl"><span>Traffic Sources</span><span>Last 30 days</span></div>
+      <div id="st-sources"></div>
+    </div>
+    <div class="stbar">
+      <div class="stbarlbl"><span>Weekly Activity</span><span>Last 7 days</span></div>
+      <div id="st-weekly"></div>
+    </div>
+    <div class="stnote">Consent-gated · Coarse aggregate counts only</div>
+  </div>
+</div>
+
+<div id="att">
+  <div class="arow"><span class="ak">Total views</span><span class="av" id="att-views">—</span></div>
+  <div class="arow"><span class="ak">Resume opens</span><span class="av" id="att-resume">—</span></div>
+  <div class="arow"><span class="ak">Shares</span><span class="av" id="att-shares">—</span></div>
+  <div class="arow"><span class="ak">vCards saved</span><span class="av" id="att-vcards">—</span></div>
+</div>
+
+<div id="toast"></div>
+
+<button id="privacy-settings" type="button" data-open-privacy><span aria-hidden="true">◈</span> Privacy</button>
+<div id="cookie-banner" role="region" aria-label="Privacy choices" aria-hidden="true">
+  <span>Optional first-party analytics power the public counters. The site works without them. Reaction and owner-login cookies are set only when those features are used. <a href="/cookies">Details</a></span>
+  <div class="cookie-actions">
+    <button type="button" data-consent="reject">Necessary only</button>
+    <button type="button" data-consent="allow">Allow anonymous stats</button>
+  </div>
+</div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

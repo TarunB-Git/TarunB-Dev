@@ -1,0 +1,8 @@
+{$PORTFOLIO_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy portfolio:8000
+    log {
+        output stdout
+        format json
+    }
+}
