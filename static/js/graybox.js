@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { createCloudGuide } from './cloud-guide.js';
+import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassage, constrainCloudPoint } from './cloud-space.js';
 
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -32,7 +33,7 @@ const LANDMARK_ANCHORS = {
 };
 const MOON_REQUIREMENTS = ['viewer', 'personal', 'recruiter'];
 const SPAWN = new THREE.Vector3(0, PLATFORM.top, 38);
-const PASSAGE = { x: 0, z: 8, radius: 7 };
+const PASSAGE = { x: 0, z: 0, radius: 8 };
 const FOCUS_DURATION = 2.4;
 const FOCUS_IN = 0.42;
 const FOCUS_OUT = 0.72;
@@ -78,10 +79,12 @@ let lastFrameAt = 0;
 let elapsed = 0;
 let cameraYaw = 0;
 let cameraPitch = 0.1;
+let cameraBoomDistance = 8;
 let verticalVelocity = 0;
 let grounded = true;
 let flightMode = false;
 let touchFlightCruise = false;
+let touchDropHeld = false;
 let spaceHeld = false;
 let spaceHeldFor = 0;
 let lastSpaceTap = -Infinity;
@@ -144,7 +147,7 @@ function loadBirdChaseStep() {
 function applyLandmarkLayout() {
   const portrait = innerWidth < 620;
   OBJECT_POS.set(portrait ? -6 : -8, PLATFORM.top, portrait ? -24 : -27);
-  SHIP_POS.set(-11, terraceTopAt(-11, -18) + 12, -18);
+  SHIP_POS.set(-10, terraceTopAt(-10, -17), -17);
   MOON_FAR_POS.set(17, Math.min(30, chamberCeilingAt(17, -31) - 5), -31);
   MOON_LAND_POS.set(15, terraceTopAt(15, -26) + 5.8, -26);
   if (moonState !== 'falling') MOON_POS.copy(moonState === 'landed' ? MOON_LAND_POS : MOON_FAR_POS);
@@ -167,7 +170,8 @@ function applyLandmarkLayout() {
     record.object.position.x = position.x;
     record.object.position.z = position.z;
     record.baseY = position.y;
-    record.focus.copy(position);
+  record.focus.copy(position);
+    if (record.id === 'viewer') record.focus.y += 7;
   });
 }
 
@@ -240,6 +244,8 @@ export function initWorld(options = {}) {
   buildAtmosphere();
   buildPlatform();
   buildPlayer();
+  addShipCloudScenery();
+  guide = createCloudGuide($('world-ui'), scene);
   buildTestObject();
   loadShipLandmark();
   loadMoonLandmark();
@@ -302,7 +308,6 @@ function buildInterface() {
   ui.appendChild(controls);
   bindTouchControls(controls);
   $('graybox-character')?.addEventListener('click', toggleCharacter);
-  guide = createCloudGuide(ui, { onRead: () => interact('personal') });
 }
 
 function bindTouchControls(controls) {
@@ -362,13 +367,19 @@ function bindTouchControls(controls) {
       beginFlight();
     }
   });
-  controls.querySelector('[data-graybox-action="drop"]')?.addEventListener('pointerdown', event => {
+  const dropButton = controls.querySelector('[data-graybox-action="drop"]');
+  dropButton?.addEventListener('pointerdown', event => {
     event.preventDefault();
-    if (!flightMode) return;
+    event.stopPropagation();
+    dropButton.setPointerCapture?.(event.pointerId);
+    touchDropHeld = true;
     touchFlightCruise = false;
     verticalVelocity = Math.min(verticalVelocity, -3.8);
-    setStatus('Dropping — tap Fly to hover again.');
+    setStatus('Hold Drop to descend.');
   });
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    dropButton?.addEventListener(name, () => { touchDropHeld = false; });
+  }
   controls.querySelector('[data-graybox-action="interact"]')?.addEventListener('click', () => interact());
   $('graybox-interact')?.addEventListener('click', () => interact());
 }
@@ -528,15 +539,9 @@ function buildPlatform() {
 }
 
 function groundHeightAt(x, z, probeY = 100) {
-  if (!cloudFloorVisual) return PLATFORM.top;
-  groundProbeOrigin.set(x, 150, z);
-  groundRaycaster.set(groundProbeOrigin, groundProbeDirection);
-  groundRaycaster.near = 0; groundRaycaster.far = 300;
-  const chamberHits = groundRaycaster.intersectObject(cloudFloorVisual, true);
-  // We are inside the enclosing mesh: the lowest crossing is the floor.
-  const floor = chamberHits.at(-1)?.point.y ?? PLATFORM.top - 8;
-  const terrace = upperCloudVisual ? groundRaycaster.intersectObject(upperCloudVisual, true)[0]?.point.y : undefined;
-  return Math.max(floor, terrace !== undefined && terrace <= probeY ? terrace : -Infinity) + .08;
+  const lower = lowerFloorAt(x, z) + .12;
+  return !inPassage(x, z) && probeY >= CLOUD_SPACE.terraceY
+    ? Math.max(lower, CLOUD_SPACE.terraceY + .12) : lower;
 }
 // Sweep against the rendered cloud triangles, not oversized proxy boxes.
 const cloudSweep = new THREE.Raycaster();
@@ -557,6 +562,10 @@ function moveThroughClouds(x, z) {
   // Both levels are solid. The central opening is the route between them;
   // separate-axis sweeps let the character slide along nearby cloud slopes.
   const next = player.position.clone();
+  const crossingFloor = player.position.y < CLOUD_SPACE.terraceY + .12
+    && player.position.y + 1.8 > CLOUD_SPACE.terraceY - CLOUD_SPACE.thickness;
+  if (crossingFloor && inPassage(player.position.x, player.position.z, PLAYER_RADIUS)
+    && !inPassage(x, z, PLAYER_RADIUS)) return next;
   for (const [axis, value] of [['x', x], ['z', z]]) {
     let fraction = 1;
     for (const height of [.85, 1.5]) {
@@ -959,22 +968,8 @@ function updateMoonFall(delta) {
 }
 
 function clampToCloudIsland(x, z) {
-  const halfX = PLATFORM.halfX - PLAYER_RADIUS;
-  const halfZ = PLATFORM.halfZ - PLAYER_RADIUS;
-  const cornerRadius = 6;
-  let nextX = THREE.MathUtils.clamp(x, -halfX, halfX);
-  let nextZ = THREE.MathUtils.clamp(z, -halfZ, halfZ);
-  const innerX = halfX - cornerRadius;
-  const innerZ = halfZ - cornerRadius;
-  const cornerX = Math.max(Math.abs(nextX) - innerX, 0);
-  const cornerZ = Math.max(Math.abs(nextZ) - innerZ, 0);
-  const cornerDistance = Math.hypot(cornerX, cornerZ);
-  if (cornerDistance > cornerRadius) {
-    const ratio = cornerRadius / cornerDistance;
-    nextX = Math.sign(nextX) * (innerX + cornerX * ratio);
-    nextZ = Math.sign(nextZ) * (innerZ + cornerZ * ratio);
-  }
-  return { x: nextX, z: nextZ };
+  const radius = Math.hypot(x / 35, z / 51);
+  return radius > 1 ? { x: x / radius, z: z / radius } : { x, z };
 }
 
 function resolveLandmarkCollisions(x, z, playerY) {
@@ -1001,100 +996,44 @@ function resolveLandmarkCollisions(x, z, playerY) {
   return { x: nextX, z: nextZ };
 }
 
-function addShipCloudScenery(gltf) {
-  const source = gltf.scene.getObjectByName('Cloud_Poly_Poly_0');
-  if (!source) return;
-  source.removeFromParent();
-  fitModel(source, 20);
-  const detail = createCloudSurfaceTexture();
-  detail.repeat.set(3, 3);
+function addShipCloudScenery() {
+  // Retain the cloud palette and surface detail, but not the decorative GLB's
+  // irregular floor, holes or disconnected collision surfaces.
+  const detail = createCloudSurfaceTexture(); detail.repeat.set(4, 4);
   const material = new THREE.MeshStandardMaterial({
-    color: 0x827991, emissive: 0x201c30, emissiveIntensity: .28,
-    map: detail, bumpMap: detail, bumpScale: .065, roughness: 1,
-    metalness: 0, flatShading: true, side: THREE.DoubleSide,
+    color: 0x898398, emissive: 0x242335, emissiveIntensity: .3,
+    map: detail, bumpMap: detail, bumpScale: .11, roughness: 1,
+    side: THREE.DoubleSide,
   });
-  const makeCloud = (name, scale, position) => {
-    const object = cloneSkeleton(source);
-    object.name = name;
-    object.scale.multiply(new THREE.Vector3(...scale));
-    object.position.set(...position);
-    object.traverse(node => {
-      if (!node.isMesh) return;
-      node.material = material.clone();
-      node.receiveShadow = true;
-      node.castShadow = false;
-    });
-    object.updateMatrixWorld(true);
-    return object;
-  };
-  // One authored cloud encloses the whole arena: no separate pink backing
-  // wall, disconnected wall chunks, or pass-through outer ceiling.
+  const geometry = createCloudGeometry();
+  cloudChamber = new THREE.Mesh(geometry.shell, material);
+  cloudChamber.name = 'Continuous cloud enclosure';
+  cloudFloorVisual = cloudChamber;
+  upperCloudVisual = new THREE.Mesh(geometry.terrace, material.clone());
+  upperCloudVisual.name = 'Complete middle cloud floor';
+  upperCloudVisual.material.color.set(0xaaa1b1);
   const group = new THREE.Group();
-  group.name = 'Cloud chamber and upper terrace';
-  const chamber = makeCloud('Continuous cloud chamber', [6.2, 13.5, 7.8], [0, 18, 0]);
-  group.add(chamber);
-  cloudFloorVisual = chamber;
-  cloudChamber = chamber;
-  const lowerAtSpawn = new THREE.Raycaster(new THREE.Vector3(SPAWN.x, 150, SPAWN.z), groundProbeDirection, 0, 300).intersectObject(chamber, true);
-  chamber.position.y += PLATFORM.top - .08 - (lowerAtSpawn.at(-1)?.point.y ?? 0);
-  chamber.updateMatrixWorld(true);
-
-  // The ship terrace is a thinner, distinct shelf within the chamber. A
-  // generous central opening is cut through both its top and underside.
-  const terrace = makeCloud('Ship terrace · central passage', [4.5, .72, 5.4], [0, 12, -6]);
-  terrace.traverse(node => {
-    if (!node.isMesh) return;
-    const geometry = node.geometry.clone();
-    const positions = geometry.attributes.position;
-    const index = geometry.index;
-    const kept = [];
-    const vertices = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-    for (let i = 0; i < (index?.count ?? positions.count); i += 3) {
-      const ids = [0, 1, 2].map(j => index ? index.getX(i + j) : i + j);
-      vertices.forEach((p, j) => p.fromBufferAttribute(positions, ids[j]).applyMatrix4(node.matrixWorld));
-      const minX = Math.min(...vertices.map(p => p.x)), maxX = Math.max(...vertices.map(p => p.x));
-      const minZ = Math.min(...vertices.map(p => p.z)), maxZ = Math.max(...vertices.map(p => p.z));
-      const dx = Math.max(minX - PASSAGE.x, 0, PASSAGE.x - maxX);
-      const dz = Math.max(minZ - PASSAGE.z, 0, PASSAGE.z - maxZ);
-      if (dx * dx + dz * dz > PASSAGE.radius * PASSAGE.radius) kept.push(...ids);
-    }
-    geometry.setIndex(kept); geometry.clearGroups();
-    node.geometry = geometry;
-    node.material.color.set(0x99909d);
-  });
-  group.add(terrace);
-  upperCloudVisual = terrace;
-  scene.add(group);
-  group.updateMatrixWorld(true);
-  cloudSolids.length = 0;
-  group.traverse(node => { if (node.isMesh) cloudSolids.push(node); });
-  const oldEnvelope = scene.userData.cloudEnvelope;
-  if (oldEnvelope) scene.remove(oldEnvelope);
-  scene.userData.cloudEnvelope = chamber;
+  group.add(cloudChamber, upperCloudVisual);
+  group.traverse(node => { if (node.isMesh) node.receiveShadow = true; });
+  scene.remove(scene.userData.cloudEnvelope);
+  scene.add(group); group.updateMatrixWorld(true);
+  scene.userData.cloudEnvelope = cloudChamber;
   scene.userData.cloudInterior = group;
+  cloudSolids.splice(0, cloudSolids.length, cloudChamber, upperCloudVisual);
   if (platformVisual) platformVisual.visible = false;
-  maxFlightHeight = new THREE.Box3().setFromObject(chamber).max.y - 1.8;
-  scrollShelfHeight = terraceTopAt(14, 8) + 1.8;
+  maxFlightHeight = 40;
+  scrollShelfHeight = 15.8;
   applyLandmarkLayout();
-  // Geographic colour accents are broad and fixed: warm harbour to the west,
-  // pale reading terrace east, cool moon alcove north. Same cloud material.
-  const harbourLight = new THREE.PointLight(0xffc49b, 28, 38, 2);
-  harbourLight.position.set(-16, 19, -14); scene.add(harbourLight);
-  const libraryLight = new THREE.PointLight(0xf0deb6, 20, 27, 2);
-  libraryLight.position.set(17, 18, 10); scene.add(libraryLight);
+  if (player) player.position.y = groundHeightAt(player.position.x, player.position.z, player.position.y + .45);
   createWorldBoard();
 }
 
 function terraceTopAt(x, z) {
-  if (!upperCloudVisual) return 13;
-  return new THREE.Raycaster(new THREE.Vector3(x, 100, z), groundProbeDirection, 0, 200)
-    .intersectObject(upperCloudVisual, true)[0]?.point.y ?? 13;
+  return CLOUD_SPACE.terraceY;
 }
 
 function chamberCeilingAt(x, z) {
-  if (!cloudChamber) return 40;
-  return new THREE.Raycaster(new THREE.Vector3(x, 150, z), groundProbeDirection, 0, 300)
-    .intersectObject(cloudChamber, true)[0]?.point.y ?? 40;
+  return upperCeilingAt(x, z) - 1.1;
 }
 
 function createWorldBoard() {
@@ -1138,9 +1077,11 @@ async function loadShipLandmark() {
     const ship = gltf.scene.getObjectByName('Boot_Finaal_1_Boot_Finaal_0');
     if (!ship) throw new Error('Ship node was not found in the cloud asset.');
     ship.removeFromParent();
-    addShipCloudScenery(gltf);
-    fitModel(ship, 26);
+    fitModel(ship, 18);
     trimShipUnderslungStick(ship);
+    ship.updateMatrixWorld(true);
+    const shipBounds = new THREE.Box3().setFromObject(ship);
+    ship.position.y -= shipBounds.min.y;
     prepareMaterials(ship, 0.82);
 
     scene.remove(testObject);
@@ -1154,12 +1095,12 @@ async function loadShipLandmark() {
     registerLandmark({
       id: 'viewer',
       object: holder,
-      focus: SHIP_POS,
+      focus: SHIP_POS.clone().add(new THREE.Vector3(0, 7, 0)),
       baseY: SHIP_POS.y,
-      bob: 0.08,
+      bob: 0,
       interactionRadius: 8.4,
       colliderRadius: 1.35,
-      colliderMinY: -8,
+      colliderMinY: 0,
       colliderMaxY: 18,
       companionScale: 0.04,
     });
@@ -1373,7 +1314,7 @@ function bindEvents() {
       if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 6) drag.moved = true;
       if (drag.moved) {
         cameraYaw -= dx * 0.006;
-        cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0058, -0.08, 0.74);
+        cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0058, -1.15, 1.05);
       }
       drag.lastX = event.clientX;
       drag.lastY = event.clientY;
@@ -1392,7 +1333,7 @@ function bindEvents() {
   canvas?.addEventListener('wheel', event => {
     if (coarsePointer.matches) return;
     event.preventDefault();
-    cameraPitch = THREE.MathUtils.clamp(cameraPitch + event.deltaY * 0.00075, -0.08, 0.74);
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch + event.deltaY * 0.00075, -1.15, 1.05);
   }, { passive: false });
 }
 
@@ -1430,6 +1371,7 @@ function unlockSpeed() {
 }
 
 function clearInput() {
+  touchDropHeld = false;
   keys.clear();
   joystick.forward = 0;
   joystick.turn = 0;
@@ -1558,7 +1500,7 @@ function updateMovement(delta) {
   }
 
   if (flightMode) {
-    const descendingFast = keys.has('shift');
+    const descendingFast = keys.has('shift') || touchDropHeld;
     const touchLayout = coarsePointer.matches || innerWidth < 760;
     const verticalTarget = descendingFast ? -9 : (spaceHeld ? 3.5 : (touchLayout && touchFlightCruise ? 0 : -0.72));
     const response = descendingFast ? 9 : 4.8;
@@ -1586,6 +1528,18 @@ function updateMovement(delta) {
     const free = cloudClearance(start, end, .2);
     if (free < 1) { player.position.y = previousY + (player.position.y - previousY) * free; verticalVelocity = 0; }
   }
+  // Analytic containment backs up mesh sweeps even at seams or a slow frame.
+  if (!inPassage(player.position.x, player.position.z, PLAYER_RADIUS)) {
+    const underside = CLOUD_SPACE.terraceY - CLOUD_SPACE.thickness - 1.8;
+    if (previousY <= underside && player.position.y > underside) {
+      player.position.y = underside; verticalVelocity = Math.min(0, verticalVelocity);
+    }
+    if (previousY >= CLOUD_SPACE.terraceY && player.position.y < CLOUD_SPACE.terraceY) {
+      player.position.y = CLOUD_SPACE.terraceY + .12; verticalVelocity = 0;
+    }
+  }
+  constrainCloudPoint(player.position);
+  if (player.position.y > groundHeight + .2) grounded = false;
   updateBirdChase(delta);
 
   const isMoving = Math.abs(moveAxis) > 0.05;
@@ -1656,7 +1610,7 @@ function setNearObject(id) {
   nearLandmarkId = id;
   const record = landmarks.get(id);
   const prompt = $('graybox-interact');
-  prompt?.classList.toggle('show', Boolean(record));
+  prompt?.classList.toggle('show', Boolean(record) && id !== 'personal');
   if (record && prompt) {
     prompt.querySelector('span').textContent = `${record.title} · ${record.label}${record.visited ? ' · visited' : ''}`;
     prompt.querySelector('strong').textContent = 'Press E or click to enter';
@@ -1714,15 +1668,19 @@ function setObjectHovered(id) {
 
 function updateCamera(delta, snap = false) {
   if (!player || !camera) return;
-    const distance = innerWidth < 620 ? 7.4 : 9.2;
-  const horizontal = Math.cos(cameraPitch) * distance;
+  const crossing = Math.abs(player.position.y - CLOUD_SPACE.terraceY) < 5.5 && Math.hypot(player.position.x, player.position.z) < 12;
+  const desiredDistance = crossing ? 2.8 : (innerWidth < 620 ? 6 : 7.5);
+  cameraBoomDistance = THREE.MathUtils.lerp(cameraBoomDistance, desiredDistance, snap ? 1 : Math.min(1, delta * 5));
+  const distance = cameraBoomDistance;
+  const orbitPitch = THREE.MathUtils.clamp(cameraPitch * .35, -.15, .35);
+  const horizontal = Math.cos(orbitPitch) * distance;
   cameraDesired.set(
     player.position.x + Math.sin(cameraYaw) * horizontal,
-    player.position.y + 1.25 + Math.sin(cameraPitch) * distance,
+    player.position.y + 1.65 + Math.sin(orbitPitch) * distance,
     player.position.z + Math.cos(cameraYaw) * horizontal,
   );
-  cameraLook.copy(player.position).addScaledVector(forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)), 3.6);
-  cameraLook.y += 0.82;
+  cameraLook.copy(player.position).addScaledVector(forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)), Math.cos(cameraPitch) * 8);
+  cameraLook.y += 1.65 - Math.sin(cameraPitch) * 8;
 
   if (interactionFocus > 0) {
     const elapsedFocus = moonState === 'falling' ? moonFallElapsed : FOCUS_DURATION - interactionFocus;
@@ -1741,6 +1699,7 @@ function updateCamera(delta, snap = false) {
   cameraDesired.x = resolvedCamera.x;
   cameraDesired.z = resolvedCamera.z;
   camera.position.lerp(cameraDesired, snap ? 1 : Math.min(1, delta * 6));
+  constrainCloudPoint(camera.position, .4);
   // Constrain the *smoothed* result too: smoothing an unobstructed endpoint
   // alone can still carry the camera through a cloud between frames.
   sweepOrigin.copy(player.position); sweepOrigin.y += 1.2;
@@ -1770,7 +1729,7 @@ function animate(now) {
   navTick += delta;
   if (guide && navTick > .1) {
     navTick = 0;
-    guide.update({ player: player.position, yaw: cameraYaw, landmarks, passage: PASSAGE, terrace: terraceTopAt(-11, -18), moonState, posts: boardPosts, near: nearLandmarkId, board: boardObject?.position });
+    guide.update({ player: player.position, yaw: cameraYaw, landmarks, passage: PASSAGE, terrace: CLOUD_SPACE.terraceY });
   }
   landmarks.forEach(record => {
     const active = nearLandmarkId === record.id || hoveredLandmarkId === record.id || focusedLandmarkId === record.id;
@@ -1783,7 +1742,7 @@ function animate(now) {
     }
 
     if (record.id === 'viewer') {
-      record.object.rotation.z = reducedMotion.matches ? 0 : Math.sin(elapsed * 0.3) * 0.012;
+      record.object.rotation.z = 0;
     } else if (record.label === 'moon') {
       record.object.rotation.y = .35 + (reducedMotion.matches ? 0 : Math.sin(elapsed * .12) * .12);
     } else if (record.label === 'scroll') {

@@ -62,16 +62,11 @@ th{color:#647294;font-weight:400;text-transform:uppercase;font-size:.6rem;letter
 .period-slug{max-width:180px}
 dialog{width:min(720px,calc(100vw - 30px));max-height:86vh;overflow:auto;padding:0;border:1px solid #34445f;border-radius:14px;background:#0e1219;color:#dce2ee;box-shadow:0 40px 100px #000}dialog::backdrop{background:rgba(0,0,0,.74)}.dialog-inner{position:relative;padding:24px}.dialog-close{position:absolute;right:12px;top:10px;width:34px;height:34px;border:0;background:transparent;color:#8898b4;font-size:1.3rem}.preview-copy{font-size:.85rem;line-height:1.8;white-space:pre-wrap}.preview-copy h2{color:#9db5df;margin-bottom:8px}
 @media(max-width:700px){#shell{padding-inline:12px}header{flex-wrap:wrap;gap:10px}header h1{flex:1 0 100%}header .sp{display:none}header a,header button{white-space:nowrap}.form-grid,.repeat-body{grid-template-columns:1fr}.form-grid .wide,.repeat-body .wide{grid-column:auto}.link-row{grid-template-columns:1fr}.list-item{flex-direction:column}.moderation-actions{width:100%}.period-header{align-items:flex-start;flex-wrap:wrap}nav{flex-wrap:nowrap;overflow-x:auto;padding-bottom:5px}nav button{white-space:nowrap}}
-body:has(#shell.hidden){background:radial-gradient(ellipse at 25% 25%,#48354b,#231c2c 70%);min-height:100svh;display:grid;place-items:center}
-body:has(#shell.hidden) #login{position:relative;margin:32px auto;padding:56px 32px 30px;width:min(430px,calc(100vw - 32px));border:1px solid #796a7c;border-radius:12px;background:#29252f;box-shadow:0 30px 80px #0005}
-.admin-home{display:block;position:absolute;top:16px;left:24px;color:#e1d4e2!important;font:500 13px Inter,sans-serif;text-decoration:none}.admin-home:hover{text-decoration:underline}
-#login #login-title{color:#eaddec!important;font-size:15px!important;letter-spacing:.12em!important}#login label{color:#c7b8ca!important}#login input{background:#211f29;color:#eee4f0;border-color:#76617a}#login #login-btn{background:#c77c49;color:#fff;border:0;border-radius:7px}#login .login-help{color:#b9aebe;line-height:1.6}
 </style>
 </head>
 <body>
 
 <div id="login">
-  <a class="admin-home" href="/?shell=directory">← Back to Device</a>
   <h1 id="login-title" style="font-family:'IBM Plex Mono',monospace;font-size:.85rem;letter-spacing:.3em;color:#5f6c85">OWNER ACCESS</h1>
   <label id="pass-label" for="pass" style="font:500 .62rem 'IBM Plex Mono',ui-monospace,monospace;color:#71809b;letter-spacing:.12em;text-transform:uppercase">Owner passphrase</label>
   <input id="pass" type="password" placeholder="passphrase" autocomplete="current-password">

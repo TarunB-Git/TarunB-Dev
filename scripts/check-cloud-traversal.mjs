@@ -1,56 +1,64 @@
-// Actual-model traversal checks without a browser or GPU.
+// Exercise the same geometry and containment functions used by the game.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { clone } from 'three/addons/utils/SkeletonUtils.js';
+import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassage, constrainCloudPoint } from '../static/js/cloud-space.js';
 const source = fs.readFileSync(new URL('../static/js/graybox.js', import.meta.url), 'utf8');
-const binary = fs.readFileSync(new URL('../static/assets/models/ship_in_clouds.glb', import.meta.url));
-const jsonLength = binary.readUInt32LE(12);
-const json = JSON.parse(binary.subarray(20, 20 + jsonLength));
-json.buffers[0].uri = 'data:application/octet-stream;base64,' + binary.subarray(28 + jsonLength).toString('base64');
-delete json.images; delete json.textures; json.materials = [];
-for (const mesh of json.meshes) for (const primitive of mesh.primitives) delete primitive.material;
-globalThis.ProgressEvent = class {};
-const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
-const gltf = await loader.parseAsync(JSON.stringify(json), '');
+const geometry = createCloudGeometry();
+const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+const shell = new THREE.Mesh(geometry.shell, material);
+const terrace = new THREE.Mesh(geometry.terrace, material);
+shell.updateMatrixWorld(true); terrace.updateMatrixWorld(true);
+const ray = new THREE.Raycaster();
+let samples = 0;
+for (let x = -32; x <= 32; x += 2) for (let z = -46; z <= 46; z += 2) {
+  if (Math.hypot(x / 36, z / 52) > .94) continue;
+  ray.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0)); ray.far = 200;
+  const hits = ray.intersectObject(shell);
+  assert.ok(hits.length >= 2, 'Closed floor and ceiling at ' + x + ',' + z);
+  const shelfHits = ray.intersectObject(terrace);
+  if (Math.hypot(x, z) < 7.8) assert.equal(shelfHits.length, 0);
+  else if (Math.hypot(x, z) > 8.2) assert.ok(shelfHits.length >= 2, 'Complete middle floor');
+  const clamped = constrainCloudPoint(new THREE.Vector3(x, 200, z));
+  assert.ok(clamped.y + 1.8 < hits[0].point.y, 'Ceiling containment leaves headroom');
+  samples++;
+}
+for (let x = -5; x <= 5; x++) for (let z = 32; z <= 42; z++) {
+  assert.ok(lowerFloorAt(x, z) < 1, 'Starting area remains shallow and walkable');
+}
 const state = vm.createContext({
-  THREE, cloneSkeleton: clone, PLATFORM: { top: .5 }, SPAWN: new THREE.Vector3(0, .5, 38),
-  PASSAGE: { x: 0, z: 8, radius: 7 }, scene: new THREE.Scene(),
-  cloudFloorVisual: null, cloudChamber: null, upperCloudVisual: null, platformVisual: null,
-  scrollShelfHeight: 30, maxFlightHeight: 48,
-  groundProbeOrigin: new THREE.Vector3(), groundProbeDirection: new THREE.Vector3(0, -1, 0),
-  groundRaycaster: new THREE.Raycaster(), cloudSweep: new THREE.Raycaster(),
-  sweepDirection: new THREE.Vector3(), cloudSolids: [],
-  player: { position: new THREE.Vector3(0, .5, 38) }, flightMode: true, grounded: false,
-  createCloudSurfaceTexture: () => new THREE.Texture(), applyLandmarkLayout: () => {}, createWorldBoard: () => {},
+  THREE, CLOUD_SPACE, lowerFloorAt, upperCeilingAt, inPassage, PLAYER_RADIUS: .42,
+  cloudSweep: new THREE.Raycaster(), sweepDirection: new THREE.Vector3(),
+  cloudSolids: [shell, terrace], player: { position: new THREE.Vector3(0, 1, 38) },
 });
-for (const name of ['fitModel', 'addShipCloudScenery', 'terraceTopAt', 'chamberCeilingAt', 'groundHeightAt', 'cloudClearance', 'moveThroughClouds']) {
+for (const name of ['groundHeightAt', 'cloudClearance', 'moveThroughClouds']) {
   const start = source.indexOf('function ' + name + '(');
-  assert.ok(start >= 0, 'Missing ' + name);
-  const end = source.indexOf('\n}', start) + 2;
-  vm.runInContext(source.slice(start, end), state);
+  vm.runInContext(source.slice(start, source.indexOf('\n}', start) + 2), state);
 }
-state.addShipCloudScenery(gltf);
-const ray = new THREE.Raycaster(new THREE.Vector3(0, 60, 8), new THREE.Vector3(0, -1, 0), 0, 150);
-assert.equal(ray.intersectObject(state.upperCloudVisual, true).length, 0, 'Opening cuts through both shelf surfaces');
-assert.ok(Math.abs(state.groundHeightAt(0, 38, 1) - .5) < .02, 'Spawn rests on the chamber floor');
-for (const [x, z] of [[-11, -18], [14, 8], [18, 10]]) {
-  ray.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0));
-  assert.ok(ray.intersectObject(state.upperCloudVisual, true).length > 0, 'Terrace supports each landmark');
-  assert.ok(state.terraceTopAt(x, z) > 10 && state.terraceTopAt(x, z) < 15);
-}
-const start = new THREE.Vector3(0, 3, 8), end = new THREE.Vector3(0, 18, 8);
-assert.equal(state.cloudClearance(start, end, .2), 1, 'Ascent through opening');
-assert.equal(state.cloudClearance(end, start, .2), 1, 'Descent through opening');
-assert.ok(state.cloudClearance(new THREE.Vector3(14, 3, 8), new THREE.Vector3(14, 18, 8), .2) < 1, 'Shelf remains solid away from passage');
-assert.ok(state.cloudClearance(end, new THREE.Vector3(0, 100, 8), .2) < 1, 'Upper ceiling stops flight');
-ray.set(new THREE.Vector3(17, 150, -31), new THREE.Vector3(0, -1, 0)); ray.far = 300;
-const moonChamber = ray.intersectObject(state.cloudChamber, true);
-const moonY = Math.min(30, state.chamberCeilingAt(17, -31) - 5);
-assert.ok(moonChamber[0].point.y > moonY + 4.5, 'Moon fits below the ceiling');
-assert.ok(moonChamber.at(-1).point.y < 27.5, 'Moon remains inside the chamber');
-console.log('Actual-model checks passed: floor, landmark terrace, two-way passage, solid shelf and ceiling.');
-assert.ok(state.chamberCeilingAt(-11, -18) > state.terraceTopAt(-11, -18) + 25, 'Ship fits beneath the upper ceiling');
+assert.equal(state.cloudClearance(new THREE.Vector3(0, 3, 0), new THREE.Vector3(0, 20, 0), .2), 1);
+assert.equal(state.cloudClearance(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, 3, 0), .2), 1);
+assert.ok(state.cloudClearance(new THREE.Vector3(14, 3, 8), new THREE.Vector3(14, 20, 8), .2) < 1);
+assert.ok(state.cloudClearance(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, 100, 0), .2) < 1);
+assert.equal(state.groundHeightAt(14, 8, 16), 14.12);
+assert.ok(state.groundHeightAt(0, 0, 16) < 1);
+assert.ok(upperCeilingAt(-10, -17) > CLOUD_SPACE.terraceY + 18 + 2, 'Ship clears ceiling');
+console.log('Cloud checks passed: ' + samples + ' floor/ceiling samples, continuous middle floor, shallow spawn and two-way opening.');
+
+// Held touch descent survives movement outside the button until release.
+const handlers = new Map();
+const drop = { addEventListener: (name, fn) => handlers.set(name, fn), setPointerCapture() {} };
+const input = vm.createContext({
+  touchDropHeld: false, touchFlightCruise: true, verticalVelocity: 0,
+  $: () => null, endSpaceInput() {}, setStatus() {},
+});
+const bindStart = source.indexOf('function bindTouchControls(');
+vm.runInContext(source.slice(bindStart, source.indexOf('\n}', bindStart) + 2), input);
+input.bindTouchControls({ querySelector: selector => selector === '[data-graybox-action="drop"]' ? drop : null });
+handlers.get('pointerdown')({ pointerId: 1, preventDefault() {}, stopPropagation() {} });
+assert.equal(input.touchDropHeld, true);
+assert.equal(input.touchFlightCruise, false);
+assert.equal(handlers.has('pointerleave'), false, 'Captured hold is not cancelled by drifting off button');
+handlers.get('pointerup')();
+assert.equal(input.touchDropHeld, false);
+console.log('Touch checks passed: held Drop, pointer capture and release.');

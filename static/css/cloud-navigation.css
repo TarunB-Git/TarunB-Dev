@@ -1,45 +1,64 @@
-/* Shared final layout rules: navigation owns reserved space, not overlays. */
-#cloud-guide{position:absolute;z-index:34;top:58px;right:20px;width:240px;padding:14px;border:1px solid #d6c9b54a;border-radius:18px;background:#181b2deb;color:#eee6d7;box-shadow:0 12px 35px #06081740;pointer-events:auto;font:400 13px/1.4 Inter,sans-serif}
-#cloud-guide header{display:flex;align-items:center;justify-content:space-between;gap:8px}#cloud-guide header strong{font:500 20px 'Cormorant Garamond',serif}
-#cloud-guide button{border:0;border-bottom:1px solid #bcab87;background:none;color:#ead7ac;padding:5px 0;font:inherit;cursor:pointer}
-#cloud-guide canvas{display:block;width:100%;height:auto;margin:6px 0}#cloud-guide [hidden]{display:none!important}
-#cloud-guide label{display:grid;gap:5px;color:#c9c1bd}#cloud-guide select{width:100%;min-height:36px;border:1px solid #bbae9055;border-radius:8px;background:#292b3f;color:#f3e9d8;padding:6px;font:inherit}
-#cloud-guide .guide-level{color:#ecd3a6;margin:10px 0 4px}#cloud-guide .guide-hint{font-size:12px;line-height:1.5;color:#c5becb;margin:0}
-.guide-direction{min-height:150px;display:grid;place-items:center;text-align:center}.guide-direction span{font:400 62px Georgia;color:#ecd3a6;transition:transform .15s linear}.guide-direction p{margin:0 0 12px}
-#cloud-board{position:absolute;z-index:35;left:24px;bottom:96px;width:min(320px,calc(100% - 48px));padding:22px;background:#e6d5b4;color:#4a392c;border:1px solid #a68b63;border-radius:5px;box-shadow:0 12px 30px #0004;pointer-events:auto}
-#cloud-board[hidden]{display:none}#cloud-board strong{font:600 22px 'Cormorant Garamond',serif}#cloud-board p{font:400 14px/1.45 Inter,sans-serif;border-bottom:1px solid #846f4933;padding-bottom:10px}#cloud-board button{padding:9px 12px;border:1px solid #816747;background:none;color:inherit;border-radius:5px;cursor:pointer}
-body.graybox-active #w-prompt{max-width:420px;width:calc(100% - 330px)}body.graybox-active #w-prompt h2{font-size:clamp(30px,3.8vw,52px)}
-#graybox-status{right:24px;top:auto;bottom:87px;max-width:245px;text-transform:none;font:400 13px/1.4 Inter,sans-serif;border:1px solid #b4a58c33;background:#1e2131d9;border-radius:10px}
-.graybox-help{gap:14px;border-radius:14px;background:#1b1e2ce0;border-color:#d0b98b45;text-transform:none;letter-spacing:0;font-size:12px;flex-wrap:wrap;max-width:calc(100% - 230px)}.graybox-help b{letter-spacing:0;color:#e8d3ac}
-#graybox-interact{border-radius:15px;border-color:#d9bd7e99;background:#252537ed}#graybox-interact span{color:#ebd3a5;font-size:12px}#graybox-interact strong{font-size:14px}
-#graybox-character{font-size:11px;text-transform:none;letter-spacing:0;bottom:16px;padding:8px 12px}
-body[data-shell-mode="world"] #privacy-settings{left:auto!important;right:16px!important;top:auto!important;bottom:54px!important;z-index:620;padding:7px 10px;font-size:12px}
-body[data-shell-mode="world"][data-path] #privacy-settings{bottom:14px!important;right:16px!important;background:#171927ed}
-body[data-shell-mode="directory"] #privacy-settings{left:auto!important;right:112px!important;top:2px!important;bottom:auto!important;height:28px;padding:5px 8px;font-size:12px;z-index:985}
-.directory-desktop-icons a:has(.shortcut-icon){transform:translateX(-12px)}
+/* Compact Cloud controls. Device shell positions remain at the checkpoint. */
+#cloud-guide {
+  position:absolute; top:56px; right:14px; width:122px; z-index:34;
+  pointer-events:auto;
+}
+#cloud-guide canvas {display:block;width:100%;height:auto}
+#cloud-guide [hidden] {display:none!important}
+#cloud-guide button {
+  position:absolute;right:-2px;top:-6px;width:34px;height:34px;
+  border:1px solid #b7abc466;border-radius:50%;background:#29283ce8;
+  color:#f2e3c4;font-size:20px;cursor:pointer;
+}
+#graybox-status {
+  top:216px;right:14px;bottom:auto;width:164px;max-width:164px;
+  border:0;background:#232337d9;border-radius:8px;padding:9px;
+  color:#eee4d4;font:400 12px/1.45 Inter,sans-serif;
+  text-transform:none;letter-spacing:0;pointer-events:none;
+}
+body.graybox-active #w-prompt {width:calc(100% - 200px);max-width:430px}
+body.graybox-active #w-prompt h2 {font-size:clamp(28px,3.8vw,48px)}
+.graybox-help {
+  max-width:calc(100% - 190px);flex-wrap:wrap;gap:12px;
+  border-radius:10px;background:#1e1d2ee8;border-color:#c8b89044;
+}
+#graybox-interact {border-radius:10px;background:#252337ed;border-color:#c5aa7499}
+#graybox-character {
+  left:auto;right:16px;bottom:14px;top:auto;max-width:160px;
+  padding:8px 10px;font-size:11px;letter-spacing:0;text-transform:none;
+}
+body[data-shell-mode="world"]:not([data-path]) #privacy-settings {
+  left:auto!important;right:16px!important;top:auto!important;bottom:56px!important;
+  z-index:620;padding:7px 10px;
+}
+body[data-shell-mode="world"][data-path] #privacy-settings {
+  top:auto!important;bottom:14px!important;right:16px!important;
+}
+.graybox-touch-actions button {touch-action:none;user-select:none;-webkit-user-select:none}
+@media(max-width:760px) {
+  #cloud-guide {top:48px;right:10px;width:100px}
+  #cloud-guide button {width:34px;height:34px}
+  #graybox-status {top:177px;right:10px;width:132px;max-width:132px;font-size:11px}
+  body.graybox-active #w-prompt {left:14px;top:54px;width:calc(100% - 162px)}
+  body.graybox-active #w-prompt h2 {font-size:28px}
+  body.graybox-active #w-prompt p {font-size:12px;line-height:1.4}
+  .world-eyebrow {display:none}
+  .graybox-touch {bottom:calc(62px + env(safe-area-inset-bottom))}
+  #graybox-character {right:12px;bottom:calc(12px + env(safe-area-inset-bottom))}
+  body[data-shell-mode="world"]:not([data-path]) #privacy-settings {
+    left:12px!important;right:auto!important;bottom:calc(12px + env(safe-area-inset-bottom))!important;
+  }
+  #graybox-interact {bottom:210px;min-width:190px;padding:9px}
+}
+@media(max-height:580px) {
+  #cloud-guide {width:82px;top:48px}
+  #graybox-status {top:155px;width:135px}
+  .graybox-help {bottom:12px}
+}
 /* Parchment entries are ink on the sheet, not unrelated floating cards. */
 #pers-timeline{container-type:inline-size}.tl-theme-personal .tl-event{left:var(--event-x)!important;top:50%!important;transform:translate(-50%,-50%)!important;width:clamp(240px,48cqw,440px)!important;max-height:70%;overflow:auto;padding:24px!important;background:transparent!important;border:0!important;border-left:1px solid #997b4c66!important;border-radius:0!important;box-shadow:none!important;color:#493318!important}
 .tl-theme-personal .tl-event::before,.tl-theme-personal .tl-event::after{display:none!important}.tl-theme-personal .tl-title{color:#493318!important;font:500 clamp(24px,3cqw,34px)/1.14 'Cormorant Garamond',serif}.tl-theme-personal .tl-summary{color:#6b5030!important;font-size:14px;line-height:1.6}.tl-theme-personal .tl-category,.tl-theme-personal .tl-subtitle{color:#775632!important}.tl-theme-personal .tl-plus{color:#60421d!important;border-color:#89673e!important;background:#e9d4a0!important;width:40px;height:40px}.tl-theme-personal .tl-event:not(.is-period-active){opacity:.3!important}
 #pers-timeline .tl-mobile-event{background:#e7d2a0;color:#4b351f;border-color:#9e8057;border-radius:5px}#pers-timeline .tl-mobile-event .tl-title{color:#4b351f}#pers-timeline .tl-mobile-event .tl-summary{color:#6a5033}
-@media(max-width:760px){
- #cloud-guide{top:48px;right:10px;width:160px;padding:10px;border-radius:12px;font-size:12px}#cloud-guide header{align-items:start}#cloud-guide header strong{font-size:17px}#cloud-guide header button{font-size:11px}#cloud-guide canvas{max-height:155px}#cloud-guide .guide-hint{font-size:11px}.guide-direction{min-height:110px}.guide-direction span{font-size:44px}
- body.graybox-active #w-prompt{top:54px;left:14px;width:calc(100% - 208px)}body.graybox-active #w-prompt h2{font-size:29px}body.graybox-active #w-prompt p{font-size:12px;line-height:1.5}.world-eyebrow{display:none}
- #graybox-status{left:14px;right:auto;bottom:180px;max-width:170px;font-size:12px}#graybox-interact{bottom:140px;min-width:210px;padding:10px}#graybox-interact span{font-size:11px}
- #graybox-character{right:14px;bottom:12px}.graybox-touch{bottom:52px}.graybox-touch-actions button{border-radius:12px;background:#272a3dea;border-color:#dac28d66;color:#f0dfc2}
- body[data-shell-mode="world"]:not([data-path]) #privacy-settings{bottom:14px!important;left:14px!important;right:auto!important}
- #cloud-board{left:12px;bottom:180px;width:calc(100% - 218px);min-width:150px;padding:12px}#cloud-board strong{font-size:18px}#cloud-board p{font-size:12px}
- .directory-desktop-icons a:has(.shortcut-icon){transform:translateX(-5px)}
-}
-@media(max-height:580px){#cloud-guide{width:180px;top:48px}#cloud-guide canvas{max-height:130px}#cloud-guide .guide-hint{display:none}.graybox-help{bottom:12px}#graybox-status{bottom:70px}}
-/* Keep the supplied icon outlines and their labels in the same coordinate box. */
-.entry-choice-orbit{width:min(340px,calc(100vw - 160px));border:0}.entry-choice-orbit::before{display:none}
-.entry-choice-option{width:140px;height:140px;min-height:0;margin-top:-70px;padding:0;border:0;background:none!important;box-shadow:none;backdrop-filter:none;border-radius:12px}
-.entry-choice-world{left:-70px}.entry-choice-directory{right:-70px}
-.entry-choice-option img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.entry-choice-option strong{position:absolute;left:50%;top:58%;margin:0;transform:translate(-50%,-50%);font:600 12px/1 'IBM Plex Mono',monospace;letter-spacing:0}
-.entry-choice-world strong{top:60%}.entry-choice-option:focus-visible{outline:2px solid #ebd4a2;outline-offset:5px}
-.entry-choice-core>p{top:7%}.entry-choice-clouds{filter:none}.entry-choice-clouds i{box-shadow:none}
-.ld-mode-icon{width:132px;height:132px}.ld-mode-icon img{width:132px;height:132px;filter:none}.ld-mode-icon .ld-txt{top:58%;font-size:11px;letter-spacing:0;text-transform:none}body[data-shell-mode="world"] .ld-mode-icon .ld-txt{top:60%}
 .profile-links{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .profile-link{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid currentColor;border-radius:7px;color:inherit;opacity:.85;text-decoration:none;transition:background .15s,opacity .15s}
 .profile-link svg{width:18px;height:18px;fill:currentColor}.profile-link:hover,.profile-link:focus-visible{opacity:1;background:#a9936826;outline-offset:3px}.profile-link[aria-disabled]{opacity:.38}
