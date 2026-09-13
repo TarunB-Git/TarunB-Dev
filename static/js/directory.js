@@ -132,25 +132,39 @@ function navigate(path, record = true) {
   if (!entriesFor(path)) { openDocument('not-found', path); return false; }
   currentLocation = path;
   if (record) { locationHistory = locationHistory.slice(0, historyIndex + 1); locationHistory.push(path); historyIndex = locationHistory.length - 1; }
-  renderLocation(); return true;
+  renderLocation(); restoreFiles(); return true;
+}
+
+let windowOrder = 60;
+function focusWindow(node) {
+  if (!node) return;
+  clearTimeout(node._windowMotion);
+  node.classList.remove('is-minimizing', 'is-closing');
+  const desktop = $('s-directory');
+  if (desktop) desktop.inert = false;
+  node.style.zIndex = String(++windowOrder);
+  node.focus?.({ preventScroll: true });
 }
 
 function animateWindow(node, kind, after) {
   if (!node) return;
   node.classList.remove('is-minimizing', 'is-closing', 'is-restoring');
   node.classList.add(kind === 'minimize' ? 'is-minimizing' : 'is-closing');
-  setTimeout(() => { node.classList.remove('is-minimizing', 'is-closing'); after?.(); }, REDUCED.matches ? 0 : 260);
+  clearTimeout(node._windowMotion);
+  node._windowMotion = setTimeout(() => { node.classList.remove('is-minimizing', 'is-closing'); after?.(); }, REDUCED.matches ? 0 : 260);
 }
 function restoreFiles(reset = false) {
   const node = $('directory-window');
   if (reset) { currentLocation = '/home/guest/Desktop'; locationHistory = ['/home', '/home/guest', currentLocation]; historyIndex = 2; renderLocation(); }
   node?.classList.remove('is-minimized', 'is-closed'); node?.classList.add('is-restoring');
+  focusWindow(node);
   setTimeout(() => node?.classList.remove('is-restoring'), REDUCED.matches ? 0 : 320);
   updateDockState();
 }
 
 function bindDrag(windowNode, titlebar) {
   if (!windowNode || !titlebar) return;
+  windowNode.addEventListener('pointerdown', () => focusWindow(windowNode));
   let drag = null;
   titlebar.addEventListener('pointerdown', event => {
     if (event.target.closest('button') || windowNode.classList.contains('is-maximized') || innerWidth < 721) return;
@@ -226,7 +240,7 @@ function openDocument(kind, detail = '') {
   const node = $('directory-document-window'); if (!node) return;
   const titles = { legal: 'Legal & Credits.txt', resume: 'Resume.pdf', 'picture-cloud': 'cloud-world-reference.png', 'picture-ship': 'ship-concept.png', trash: 'README.txt', 'not-found': '404 — File not found' };
   $('document-window-title').textContent = titles[kind] || 'Document'; $('directory-document-content').innerHTML = documentMarkup(kind, detail);
-  node.hidden = false; node.classList.remove('is-minimized', 'is-closed'); node.classList.add('is-restoring'); setTimeout(() => node.classList.remove('is-restoring'), 320);
+  node.hidden = false; node.classList.remove('is-minimized', 'is-closed'); node.classList.add('is-restoring'); focusWindow(node); setTimeout(() => node.classList.remove('is-restoring'), 320);
   updateDockState();
 }
 function closeDocument(minimize = false) {
@@ -264,6 +278,8 @@ function updateClockAndCalendar() {
 
 export function setDirectoryApp(path, active, { discard = false } = {}) {
   const node = $('directory-app-window'); if (!node) return;
+  const parent = document.body.dataset.shellMode === 'directory' ? $('s-directory') : document.body;
+  if (parent && node.parentElement !== parent) parent.append(node);
   if (discard) {
     node.classList.remove('active', 'is-minimized', 'is-closed', 'is-maximized', 'shell-hidden');
     delete node.dataset.path;
@@ -275,10 +291,13 @@ export function setDirectoryApp(path, active, { discard = false } = {}) {
     /* Opening another path must always restore the app, even when the previous
        path was minimized. This is the state that previously left Device inert. */
     if (changedPath || node.classList.contains('is-minimized')) node.classList.remove('is-minimized');
+    focusWindow(node);
   } else if (node.classList.contains('active')) {
     /* Cloud and Device own separate navigation state. Suspend, do not destroy,
        a minimized Device window while the visitor explores the Cloud. */
-    node.classList.add('shell-hidden');
+    // This wrapper also contains Cloud path pages. Hiding the wrapper while
+    // in Cloud made a successful path transition look like an unresponsive tap.
+    node.classList.toggle('shell-hidden', document.body.dataset.shellMode === 'directory');
   }
   const titlePath = path || node.dataset.path;
   if ($('app-window-title')) $('app-window-title').textContent = PATH_TITLES[titlePath] || 'Portfolio';
@@ -313,13 +332,13 @@ export function initDirectory(next = {}) {
     if (dir?.dataset.directoryAction === 'back' && historyIndex > 0) { historyIndex -= 1; currentLocation = locationHistory[historyIndex]; renderLocation(); }
     if (dir?.dataset.directoryAction === 'forward' && historyIndex < locationHistory.length - 1) { historyIndex += 1; currentLocation = locationHistory[historyIndex]; renderLocation(); }
     if (dir?.dataset.directoryAction === 'restore' || dir?.dataset.directoryAction === 'focus-files') { restoreFiles(dir.dataset.directoryAction === 'restore' && $('directory-window')?.classList.contains('is-closed')); if ($('directory-overview')) $('directory-overview').hidden = true; }
-    if (dir?.dataset.directoryAction === 'restore-document') { $('directory-document-window')?.classList.remove('is-minimized', 'is-closed'); if ($('directory-overview')) $('directory-overview').hidden = true; updateDockState(); }
+    if (dir?.dataset.directoryAction === 'restore-document') { $('directory-document-window')?.classList.remove('is-minimized', 'is-closed'); focusWindow($('directory-document-window')); if ($('directory-overview')) $('directory-overview').hidden = true; updateDockState(); }
     if (dir?.dataset.directoryAction === 'focus-path') {
       const app = $('directory-app-window');
       const suspendedPath = app?.dataset.path;
       if (suspendedPath && !app.querySelector('.ps.on')) callbacks.onPath?.(suspendedPath);
       else app?.classList.remove('is-minimized', 'is-closed', 'shell-hidden');
-      if ($('s-directory')) $('s-directory').inert = true;
+      focusWindow(app);
       if ($('directory-overview')) $('directory-overview').hidden = true;
       updateDockState();
     }

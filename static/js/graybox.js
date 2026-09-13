@@ -4,11 +4,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { createCloudGuide } from './cloud-guide.js';
-import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassage, constrainCloudPoint } from './cloud-space.js';
+import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassage, constrainCloudPoint, setCloudRelief, terraceHeightAt } from './cloud-space.js';
 
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const coarsePointer = matchMedia('(pointer: coarse)');
+const renderPixelRatio = () => Math.min(devicePixelRatio || 1, 1.75)
+  / (Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--touch-ui-scale')) || 1);
 const PLATFORM = { halfX: 26, halfZ: 48, top: 0.5 };
 const PLAYER_RADIUS = 0.42;
 const OBJECT_POS = new THREE.Vector3(-8, PLATFORM.top, -27);
@@ -85,6 +87,8 @@ let grounded = true;
 let flightMode = false;
 let touchFlightCruise = false;
 let touchDropHeld = false;
+let forwardHeldFor = 0;
+let forwardSurgeLatched = false;
 let spaceHeld = false;
 let spaceHeldFor = 0;
 let lastSpaceTap = -Infinity;
@@ -148,11 +152,11 @@ function applyLandmarkLayout() {
   const portrait = innerWidth < 620;
   OBJECT_POS.set(portrait ? -6 : -8, PLATFORM.top, portrait ? -24 : -27);
   SHIP_POS.set(-10, terraceTopAt(-10, -17), -17);
-  MOON_FAR_POS.set(17, Math.min(30, chamberCeilingAt(17, -31) - 5), -31);
-  MOON_LAND_POS.set(15, terraceTopAt(15, -26) + 5.8, -26);
+  MOON_FAR_POS.set(0, chamberCeilingAt(0, 0) - 7, 0);
+  MOON_LAND_POS.set(0, lowerFloorAt(0, 0) + 4.6, 0);
   if (moonState !== 'falling') MOON_POS.copy(moonState === 'landed' ? MOON_LAND_POS : MOON_FAR_POS);
   // Height is measured from the upper cloud's actual surface after loading.
-  SCROLL_POS.set(14, terraceTopAt(14, 8) + 1.8, 8);
+  SCROLL_POS.set(SPAWN.x, terraceTopAt(SPAWN.x, SPAWN.z) + 1.8, SPAWN.z);
   BIRD_CHASE_POINTS[0].set(portrait ? -2 : -3, portrait ? 8 : 9, portrait ? 15 : 13);
   BIRD_CHASE_POINTS[1].set(portrait ? 6 : 8, portrait ? 7.5 : 8.5, portrait ? 43 : 45);
   BIRD_CHASE_POINTS[2].set(portrait ? -9 : -12, portrait ? 9 : 10, portrait ? 5 : 2);
@@ -230,7 +234,7 @@ export function initWorld(options = {}) {
   }
 
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75));
+  renderer.setPixelRatio(renderPixelRatio());
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.96;
@@ -302,12 +306,13 @@ function buildInterface() {
     </div>
     <button id="graybox-interact" type="button"><span>Landmark nearby</span><strong>Press E or click to enter</strong></button>
     <div id="graybox-status" role="status" aria-live="polite"></div>
-    <button id="graybox-character" type="button" aria-label="Switch character">Character · Mage</button>
+    <div id="cloud-utilities"><button id="graybox-character" type="button" aria-label="Switch character">Character · Mage</button><button id="cloud-privacy" type="button">Privacy</button></div>
     <div id="speed-unlock" role="status" aria-live="polite" hidden><i aria-hidden="true"></i><strong>Gale Step</strong><span>Double-tap W or ↑ to surge for 10 seconds.</span></div>
     <div id="speed-boost" aria-live="polite" hidden><span>Gale Step</span><b>10.0</b></div>`;
   ui.appendChild(controls);
   bindTouchControls(controls);
   $('graybox-character')?.addEventListener('click', toggleCharacter);
+  $('cloud-privacy')?.addEventListener('click', () => $('privacy-settings')?.click());
 }
 
 function bindTouchControls(controls) {
@@ -540,8 +545,8 @@ function buildPlatform() {
 
 function groundHeightAt(x, z, probeY = 100) {
   const lower = lowerFloorAt(x, z) + .12;
-  return !inPassage(x, z) && probeY >= CLOUD_SPACE.terraceY
-    ? Math.max(lower, CLOUD_SPACE.terraceY + .12) : lower;
+  return !inPassage(x, z) && probeY >= terraceHeightAt(x, z)
+    ? Math.max(lower, terraceHeightAt(x, z) + .12) : lower;
 }
 // Sweep against the rendered cloud triangles, not oversized proxy boxes.
 const cloudSweep = new THREE.Raycaster();
@@ -562,8 +567,9 @@ function moveThroughClouds(x, z) {
   // Both levels are solid. The central opening is the route between them;
   // separate-axis sweeps let the character slide along nearby cloud slopes.
   const next = player.position.clone();
-  const crossingFloor = player.position.y < CLOUD_SPACE.terraceY + .12
-    && player.position.y + 1.8 > CLOUD_SPACE.terraceY - CLOUD_SPACE.thickness;
+  const shelf = terraceHeightAt(x, z);
+  const crossingFloor = player.position.y < shelf + .12
+    && player.position.y + 1.8 > shelf - CLOUD_SPACE.thickness;
   if (crossingFloor && inPassage(player.position.x, player.position.z, PLAYER_RADIUS)
     && !inPassage(x, z, PLAYER_RADIUS)) return next;
   for (const [axis, value] of [['x', x], ['z', z]]) {
@@ -656,7 +662,7 @@ function buildPlayer() {
   playerVisual.scale.setScalar(0.64);
   playerVisual.traverse(node => { if (node.isMesh) node.castShadow = true; });
   player.add(playerVisual);
-  const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x100d19, transparent: true, opacity: .34, depthWrite: false });
+  const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x100d19, transparent: true, opacity: .4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   playerShadow = new THREE.Mesh(new THREE.CircleGeometry(.58, 24), shadowMaterial);
   playerShadow.rotation.x = -Math.PI / 2;
   playerShadow.renderOrder = 2;
@@ -860,7 +866,7 @@ function registerLandmark({
   loadedLandmarks += 1;
   if (record.visited) addCompanion(record);
   updatePrototypeCopy();
-  if (!nearLandmarkId) setStatus('Choose a landmark to explore.');
+  if (!nearLandmarkId) setStatus('Follow the arrow to your next destination.');
   return record;
 }
 
@@ -968,7 +974,7 @@ function updateMoonFall(delta) {
 }
 
 function clampToCloudIsland(x, z) {
-  const radius = Math.hypot(x / 35, z / 51);
+  const radius = Math.hypot(x / 47, z / 67);
   return radius > 1 ? { x: x / radius, z: z / radius } : { x, z };
 }
 
@@ -1003,7 +1009,7 @@ function addShipCloudScenery() {
   const material = new THREE.MeshStandardMaterial({
     color: 0x898398, emissive: 0x242335, emissiveIntensity: .3,
     map: detail, bumpMap: detail, bumpScale: .11, roughness: 1,
-    side: THREE.DoubleSide,
+    side: THREE.DoubleSide, flatShading: true,
   });
   const geometry = createCloudGeometry();
   cloudChamber = new THREE.Mesh(geometry.shell, material);
@@ -1021,15 +1027,15 @@ function addShipCloudScenery() {
   scene.userData.cloudInterior = group;
   cloudSolids.splice(0, cloudSolids.length, cloudChamber, upperCloudVisual);
   if (platformVisual) platformVisual.visible = false;
-  maxFlightHeight = 40;
-  scrollShelfHeight = 15.8;
+  maxFlightHeight = 68;
+  scrollShelfHeight = terraceTopAt(SPAWN.x, SPAWN.z) + 1.8;
   applyLandmarkLayout();
   if (player) player.position.y = groundHeightAt(player.position.x, player.position.z, player.position.y + .45);
   createWorldBoard();
 }
 
 function terraceTopAt(x, z) {
-  return CLOUD_SPACE.terraceY;
+  return terraceHeightAt(x, z);
 }
 
 function chamberCeilingAt(x, z) {
@@ -1041,7 +1047,7 @@ function createWorldBoard() {
   const context = canvas.getContext('2d');
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   boardObject = new THREE.Group();
-  boardObject.position.set(18, terraceTopAt(18, 10) + 2.2, 10);
+  boardObject.position.set(SPAWN.x + 5, terraceTopAt(SPAWN.x + 5, SPAWN.z) + 2.2, SPAWN.z);
   const face = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 3), new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }));
   const frame = new THREE.Mesh(new THREE.BoxGeometry(4.7, 3.2, .18), new THREE.MeshStandardMaterial({ color: 0x6c5140, roughness: .9 }));
   frame.position.z = -.12; boardObject.add(frame, face);
@@ -1069,11 +1075,44 @@ function createWorldBoard() {
     .then(data => { boardPosts = Array.isArray(data.items) ? data.items.slice(0, 3) : []; draw(); })
     .catch(() => { /* Keep a useful empty board offline. */ });
 }
+function restoreAuthoredCloudRelief(gltf) {
+  const cloud = gltf.scene.getObjectByName('Cloud_Poly_Poly_0');
+  if (!cloud) return;
+  cloud.updateWorldMatrix(true, true);
+  const bounds = new THREE.Box3().setFromObject(cloud), size = bounds.getSize(new THREE.Vector3());
+  const n = 40, values = new Float32Array(n * n);
+  const probe = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0);
+  cloud.traverse(node => { if (node.isMesh) {
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    materials.forEach(material => { material.side = THREE.DoubleSide; });
+  } });
+  // Sample the supplied cloud's sculpted relief, then compress only its height.
+  // The sealed arena remains the collision surface, without the GLB's holes.
+  for (let z = 0; z < n; z++) for (let x = 0; x < n; x++) {
+    probe.set(new THREE.Vector3(bounds.min.x + size.x * (.08 + .84 * x / (n - 1)), bounds.max.y + 1, bounds.min.z + size.z * (.08 + .84 * z / (n - 1))), down);
+    probe.far = size.y + 2;
+    const hit = probe.intersectObject(cloud, true)[0];
+    values[z * n + x] = hit ? THREE.MathUtils.clamp((hit.point.y - bounds.min.y) / size.y, 0, 1) : .5;
+  }
+  setCloudRelief((x, z) => {
+    const u = THREE.MathUtils.clamp((x / 96 + .5) * (n - 1), 0, n - 1.001);
+    const v = THREE.MathUtils.clamp((z / 136 + .5) * (n - 1), 0, n - 1.001);
+    const a = Math.floor(u), b = Math.floor(v), tx = u - a, tz = v - b;
+    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(values[b * n + a], values[b * n + a + 1], tx), THREE.MathUtils.lerp(values[(b + 1) * n + a], values[(b + 1) * n + a + 1], tx), tz);
+  });
+  const geometry = createCloudGeometry();
+  cloudChamber.geometry.dispose(); upperCloudVisual.geometry.dispose();
+  cloudChamber.geometry = geometry.shell; upperCloudVisual.geometry = geometry.terrace;
+  applyLandmarkLayout();
+  if (boardObject) boardObject.position.y = terraceTopAt(boardObject.position.x, boardObject.position.z) + 2.2;
+}
+
 async function loadShipLandmark() {
   try {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
     const gltf = await loader.loadAsync('/static/assets/models/ship_in_clouds.glb');
+    restoreAuthoredCloudRelief(gltf);
     const ship = gltf.scene.getObjectByName('Boot_Finaal_1_Boot_Finaal_0');
     if (!ship) throw new Error('Ship node was not found in the cloud asset.');
     ship.removeFromParent();
@@ -1109,7 +1148,7 @@ async function loadShipLandmark() {
     lamp.position.set(1, 2.5, 3);
     holder.add(lamp);
 
-    setStatus('Choose a landmark to explore.');
+    setStatus('Follow the arrow to your next destination.');
   } catch (error) {
     console.warn('Keeping the test cube because the ship could not load:', error);
   }
@@ -1304,14 +1343,14 @@ function bindEvents() {
 
   const canvas = $('three-canvas');
   canvas?.addEventListener('pointerdown', event => {
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, moved: false };
+    drag = { id: event.pointerId, landmark: landmarkAt(event.clientX, event.clientY), x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, moved: false };
     canvas.setPointerCapture?.(event.pointerId);
   });
   canvas?.addEventListener('pointermove', event => {
     if (drag?.id === event.pointerId) {
       const dx = event.clientX - drag.lastX;
       const dy = event.clientY - drag.lastY;
-      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 6) drag.moved = true;
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > (coarsePointer.matches ? 18 : 6)) drag.moved = true;
       if (drag.moved) {
         cameraYaw -= dx * 0.006;
         cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0058, -1.15, 1.05);
@@ -1323,7 +1362,7 @@ function bindEvents() {
   });
   canvas?.addEventListener('pointerup', event => {
     if (drag?.id === event.pointerId && !drag.moved) {
-      const id = landmarkAt(event.clientX, event.clientY);
+      const id = drag.landmark || landmarkAt(event.clientX, event.clientY);
       if (id) interact(id);
     }
     drag = null;
@@ -1348,7 +1387,7 @@ function normalizedKey(event) {
 
 function triggerSpeedBoost() {
   speedBoostRemaining = SPEED_BOOST_DURATION;
-  setStatus('Gale Step active — movement doubled for 10 seconds.');
+  setStatus('Gale Step · double speed for 10 seconds.');
   const stage = $('s-world');
   stage?.classList.remove('speed-surging');
   void stage?.offsetWidth;
@@ -1362,6 +1401,9 @@ function unlockSpeed() {
   try { sessionStorage.setItem(SPEED_UNLOCK_KEY, 'true'); } catch { /* session storage is optional */ }
   const notice = $('speed-unlock');
   if (!notice) return;
+  notice.querySelector('span').textContent = coarsePointer.matches
+    ? 'Hold forward for 2 seconds to surge. Lasts 10 seconds.'
+    : 'Double-tap W or ↑ to surge for 10 seconds.';
   notice.hidden = false;
   requestAnimationFrame(() => notice.classList.add('show'));
   setTimeout(() => {
@@ -1422,7 +1464,7 @@ function finishLanding() {
   if (player) player.position.y = groundHeightAt(player.position.x, player.position.z, player.position.y + .45);
   updateFlightControls();
   const nearby = landmarks.get(nearLandmarkId);
-  setStatus(nearby ? `${nearby.label} in range. Press E.` : 'Choose a landmark to explore.');
+  setStatus(nearby ? `${nearby.label} in range. Use to enter.` : '');
 }
 
 function updateFlightControls() {
@@ -1480,6 +1522,12 @@ function updateMovement(delta) {
     if (value) value.textContent = speedBoostRemaining.toFixed(1);
   }
   const moveAxis = THREE.MathUtils.clamp(axis(['w', 'arrowup'], ['s', 'arrowdown']) + joystick.forward, -1, 1);
+  if (coarsePointer.matches && speedUnlocked && joystick.forward > .8) {
+    forwardHeldFor += delta;
+    if (forwardHeldFor >= 2 && !forwardSurgeLatched && speedBoostRemaining <= 0) {
+      triggerSpeedBoost(); forwardSurgeLatched = true;
+    }
+  } else { forwardHeldFor = 0; forwardSurgeLatched = false; }
   const turnAxis = THREE.MathUtils.clamp(axis(['d', 'arrowright'], ['a', 'arrowleft']) + joystick.turn, -1, 1);
   cameraYaw -= turnAxis * delta * 2.15;
   forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
@@ -1530,12 +1578,13 @@ function updateMovement(delta) {
   }
   // Analytic containment backs up mesh sweeps even at seams or a slow frame.
   if (!inPassage(player.position.x, player.position.z, PLAYER_RADIUS)) {
-    const underside = CLOUD_SPACE.terraceY - CLOUD_SPACE.thickness - 1.8;
+    const shelf = terraceHeightAt(player.position.x, player.position.z);
+    const underside = shelf - CLOUD_SPACE.thickness - 1.8;
     if (previousY <= underside && player.position.y > underside) {
       player.position.y = underside; verticalVelocity = Math.min(0, verticalVelocity);
     }
-    if (previousY >= CLOUD_SPACE.terraceY && player.position.y < CLOUD_SPACE.terraceY) {
-      player.position.y = CLOUD_SPACE.terraceY + .12; verticalVelocity = 0;
+    if (previousY >= shelf && player.position.y < shelf) {
+      player.position.y = shelf + .12; verticalVelocity = 0;
     }
   }
   constrainCloudPoint(player.position);
@@ -1575,7 +1624,15 @@ function updateMovement(delta) {
   if (playerShadow) {
     const floor = groundHeightAt(player.position.x, player.position.z, player.position.y + .45);
     const height = Math.max(0, player.position.y - floor);
-    playerShadow.position.set(player.position.x, floor + .035, player.position.z);
+    groundRaycaster.set(player.position.clone().add(new THREE.Vector3(0, .35, 0)), groundProbeDirection);
+    groundRaycaster.near = 0; groundRaycaster.far = 150;
+    const shadowHit = groundRaycaster.intersectObjects(cloudSolids, true)[0];
+    playerShadow.position.set(player.position.x, (shadowHit?.point.y ?? floor) + .16, player.position.z);
+    if (shadowHit?.face) {
+      const normal = shadowHit.face.normal.clone().transformDirection(shadowHit.object.matrixWorld);
+      if (normal.y < 0) normal.negate();
+      playerShadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    }
     const scale = THREE.MathUtils.clamp(1 - height * .025, .58, 1);
     playerShadow.scale.setScalar(scale);
     playerShadow.material.opacity = THREE.MathUtils.clamp(.36 - height * .012, .1, .36);
@@ -1587,12 +1644,7 @@ function updateMovement(delta) {
     if (record.locked) return;
     // Altitude matters for flying landmarks. Without it, the overhead scroll
     // was considered "in range" while the player was still on the ground.
-    const verticalDistance = (player.position.y - record.object.position.y) * .68;
-    const distance = Math.hypot(
-      player.position.x - record.anchor.x,
-      player.position.z - record.anchor.z,
-      verticalDistance,
-    );
+    const distance = landmarkDistance(record);
     if (distance < record.interactionRadius && distance < closestDistance) {
       closestId = record.id;
       closestDistance = distance;
@@ -1615,10 +1667,16 @@ function setNearObject(id) {
     prompt.querySelector('span').textContent = `${record.title} · ${record.label}${record.visited ? ' · visited' : ''}`;
     prompt.querySelector('strong').textContent = 'Press E or click to enter';
   }
-  setStatus(record ? `${record.label} in range. Press E.` : 'Choose a landmark to explore.');
+  setStatus(record ? (coarsePointer.matches ? `Tap the ${record.label} or Use to enter.` : `${record.label} in range. Press E or click it.`) : '');
+}
+
+function landmarkDistance(record) {
+  record.object.updateWorldMatrix(true, true);
+  return new THREE.Box3().setFromObject(record.object).distanceToPoint(player.position.clone().add(new THREE.Vector3(0, 1, 0)));
 }
 
 function interact(requestedId = nearLandmarkId) {
+  if (interactionFocus > 0) return;
   const record = landmarks.get(requestedId);
   if (record?.locked) {
     setStatus(record.id === 'recruiter'
@@ -1626,7 +1684,7 @@ function interact(requestedId = nearLandmarkId) {
       : 'Find the ship, scroll, and birds before entering the moon.');
     return;
   }
-  if (!record || nearLandmarkId !== record.id) {
+  if (!record || landmarkDistance(record) > record.interactionRadius) {
     setStatus(record ? `Move closer to the ${record.label} before entering.` : 'Move closer to a landmark before entering.');
     return;
   }
@@ -1654,7 +1712,9 @@ function landmarkAt(clientX, clientY) {
   );
   raycaster.setFromCamera(pointerNdc, camera);
   const hit = raycaster.intersectObjects([...landmarks.values()].map(record => record.object), true)[0];
-  return hit?.object?.userData?.landmarkId || null;
+  let node = hit?.object;
+  while (node) { if (node.userData?.landmarkId) return node.userData.landmarkId; node = node.parent; }
+  return null;
 }
 
 function updateObjectHover(x, y) {
@@ -1668,6 +1728,7 @@ function setObjectHovered(id) {
 
 function updateCamera(delta, snap = false) {
   if (!player || !camera) return;
+  const moonShot = focusedLandmarkId === 'friend' && interactionFocus > 0;
   const crossing = Math.abs(player.position.y - CLOUD_SPACE.terraceY) < 5.5 && Math.hypot(player.position.x, player.position.z) < 12;
   const desiredDistance = crossing ? 2.8 : (innerWidth < 620 ? 6 : 7.5);
   cameraBoomDistance = THREE.MathUtils.lerp(cameraBoomDistance, desiredDistance, snap ? 1 : Math.min(1, delta * 5));
@@ -1687,13 +1748,13 @@ function updateCamera(delta, snap = false) {
     const entering = THREE.MathUtils.smoothstep(elapsedFocus, 0, FOCUS_IN);
     const leaving = moonState === 'falling' ? 1 : THREE.MathUtils.smoothstep(interactionFocus, 0, FOCUS_OUT);
     const blend = Math.min(entering, leaving);
-    const focusDistance = focusedLandmarkId === 'friend' ? 14 : (focusedLandmarkId === 'viewer' ? 11 : 7.5);
+    const focusDistance = focusedLandmarkId === 'friend' ? 5 : (focusedLandmarkId === 'viewer' ? 11 : 7.5);
     focusCamera.copy(landmarkFocus).add(new THREE.Vector3(focusDistance * 0.72, 3.8, focusDistance));
     focusLook.copy(landmarkFocus);
     cameraDesired.lerp(focusCamera, blend);
     cameraLook.lerp(focusLook, blend);
   }
-  const cameraFloor = groundHeightAt(cameraDesired.x, cameraDesired.z, player.position.y + .45) + 0.72;
+  const cameraFloor = groundHeightAt(cameraDesired.x, cameraDesired.z, cameraDesired.y + .25) + 0.72;
   cameraDesired.y = Math.max(cameraDesired.y, cameraFloor);
   const resolvedCamera = resolveLandmarkCollisions(cameraDesired.x, cameraDesired.z, cameraDesired.y);
   cameraDesired.x = resolvedCamera.x;
@@ -1702,7 +1763,7 @@ function updateCamera(delta, snap = false) {
   constrainCloudPoint(camera.position, .4);
   // Constrain the *smoothed* result too: smoothing an unobstructed endpoint
   // alone can still carry the camera through a cloud between frames.
-  sweepOrigin.copy(player.position); sweepOrigin.y += 1.2;
+  sweepOrigin.copy(moonShot ? landmarkFocus : player.position); sweepOrigin.y += 1.2;
   const cameraFraction = cloudClearance(sweepOrigin, camera.position, .45);
   if (cameraFraction < 1) camera.position.lerpVectors(sweepOrigin, camera.position, cameraFraction);
   camera.lookAt(cameraLook);
@@ -1722,14 +1783,14 @@ function animate(now) {
       focusedLandmarkId = null;
       $('graybox-interact')?.classList.toggle('show', Boolean(nearLandmarkId));
       const nearby = landmarks.get(nearLandmarkId);
-      setStatus(nearby ? `${nearby.label} in range. Press E.` : 'Choose a landmark to explore.');
+      setStatus(nearby ? `${nearby.label} in range. Use to enter.` : '');
     }
   }
   updateCamera(delta);
   navTick += delta;
   if (guide && navTick > .1) {
     navTick = 0;
-    guide.update({ player: player.position, yaw: cameraYaw, landmarks, passage: PASSAGE, terrace: CLOUD_SPACE.terraceY });
+    guide.update({ player: player.position, yaw: cameraYaw, landmarks, passage: PASSAGE, terrace: CLOUD_SPACE.terraceY, near: nearLandmarkId });
   }
   landmarks.forEach(record => {
     const active = nearLandmarkId === record.id || hoveredLandmarkId === record.id || focusedLandmarkId === record.id;
@@ -1787,6 +1848,7 @@ function animate(now) {
     companion.object.rotation.y = -angle + Math.PI;
   });
   renderer.render(scene, camera);
+  guide?.render(renderer);
   frame = requestAnimationFrame(animate);
 }
 
@@ -1797,7 +1859,7 @@ function onResize() {
   camera.aspect = innerWidth / Math.max(innerHeight, 1);
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75));
+  renderer.setPixelRatio(renderPixelRatio());
 }
 
 export function pauseWorld() {

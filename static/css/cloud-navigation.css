@@ -68,3 +68,49 @@ body[data-shell-mode="world"][data-path] #privacy-settings {
 @media(max-width:760px){#mini .mini-role,#mini .mini-sep{display:none}#mini .mini-bar{flex-wrap:wrap;gap:6px}#mini .mini-name{margin-right:auto}#mini .mini-acts{gap:4px}#mini-socials{gap:4px}}
 @media(max-width:400px){#mini .mini-bar{padding:7px 8px}#mini .mini-name{font-size:15px}#mini .mini-sdot{display:none}#mini .mini-acts{margin-left:0}#mini .mini-acts .mab{padding:5px}#mini .experience-switch.is-mini-switch{margin-left:0}}
 @media(prefers-reduced-motion:reduce){.guide-direction span,.profile-link{transition:none}}
+
+/* Desktop-style layouts share one stacking context and a usable window dock. */
+body[data-shell-mode="directory"] .directory-dock{z-index:9000}
+body[data-shell-mode="directory"] .directory-topbar{z-index:9010}
+body[data-shell-mode="directory"] .directory-calendar,body[data-shell-mode="directory"] .directory-overview{z-index:9020}
+body[data-shell-mode="directory"] #privacy-settings{top:2px!important;right:125px!important;bottom:auto!important;left:auto!important;z-index:9030}
+/* The gold arrow is drawn with the existing renderer into this clear slot. */
+#cloud-guide{top:60px;right:20px;width:250px;display:flex;align-items:center;gap:8px;pointer-events:none;background:none}
+#cloud-guide[hidden]{display:none}
+#cloud-guide .guide-arrow{width:66px;height:66px;flex:0 0 66px}
+#cloud-guide>div:last-child{padding:9px 12px;background:#211e24dd;border-radius:4px;flex:1}
+#cloud-guide strong{color:#efbd5f;font:600 14px/1.3 Inter,sans-serif}
+#cloud-guide p{margin:4px 0 0;color:#eee7d7;font:400 12px/1.4 Inter,sans-serif}
+#graybox-status{top:144px;right:20px;width:242px;max-width:242px;background:#211e24b0}
+#graybox-status:empty{display:none}
+#cloud-utilities{position:absolute;right:18px;bottom:16px;display:flex;gap:10px;align-items:center;pointer-events:auto;z-index:50}
+#cloud-utilities button{position:static!important;min-height:36px;padding:8px 12px;border:1px solid #c6b8a766;border-radius:8px;background:#292332ed;color:#f1e8db;font:500 12px Inter,sans-serif;cursor:pointer;max-width:none}
+body[data-shell-mode="world"]:not([data-path]) #privacy-settings{display:none!important}
+body[data-shell-mode="world"][data-path] #privacy-settings{left:18px!important;right:auto!important;bottom:14px!important;top:auto!important}
+@media(pointer:coarse){
+ .graybox-touch{bottom:calc(64px * var(--touch-ui-scale,1));left:20px;right:20px}
+ .graybox-stick{transform:scale(var(--touch-ui-scale,1));transform-origin:bottom left}
+ .graybox-touch-actions{transform:scale(var(--touch-ui-scale,1));transform-origin:bottom right;grid-template-columns:repeat(2,72px)}
+ .graybox-touch-actions button{width:72px;height:72px;font-size:12px;touch-action:none}
+ #cloud-utilities{transform:scale(var(--touch-ui-scale,1));transform-origin:bottom right}
+ #graybox-interact{bottom:calc(225px * var(--touch-ui-scale,1));font-size:14px}
+}
+/* Acquisition: a brief white burst, dark pause, then the ability name. */
+#speed-unlock{inset:0;width:100%;height:100%;padding:0;transform:none;align-content:center;gap:18px;background:radial-gradient(ellipse,#080910df,#08091099);transition:opacity .5s;isolation:isolate}
+#speed-unlock.show{transform:none}
+#speed-unlock::before{inset:0;width:auto;height:auto;border:0;border-radius:0;transform:none;background:repeating-conic-gradient(from 12deg,transparent 0deg 12deg,#edf7ff55 12.1deg 12.5deg,transparent 13deg 20deg);mask-image:radial-gradient(ellipse,transparent 16%,#000 45%,transparent 68%);animation:abilityBurst 1.5s ease-out both;z-index:-1}
+#speed-unlock::after{left:50%;top:50%;width:75%;height:2px;border:0;border-radius:0;background:#eef8ff;box-shadow:0 0 24px #d8edff;animation:abilitySlash .7s ease-out both}
+#speed-unlock i{display:none}
+#speed-unlock strong{font:500 54px/1.1 'Cormorant Garamond',serif;letter-spacing:.14em;color:#fff;text-shadow:0 0 24px #c9e2fa80;animation:abilityName 1s .35s both}
+#speed-unlock strong::before{content:'ABILITY ACQUIRED';display:block;margin-bottom:24px;color:#b9b8c6;font:400 12px Inter,sans-serif;letter-spacing:.35em}
+#speed-unlock span{max-width:380px;font:400 14px/1.5 Inter,sans-serif;text-transform:none;letter-spacing:0;animation:abilityName 1s .65s both}
+@keyframes abilityBurst{from{opacity:1;transform:scale(.3) rotate(-12deg)}to{opacity:0;transform:scale(1.4) rotate(8deg)}}
+@keyframes abilitySlash{0%{opacity:0;transform:translate(-50%,-50%) scaleX(.02)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scaleX(1)}}
+@keyframes abilityName{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+/* Static supplied icons, one short clearing transition, no continuous orbit. */
+.entry-choice-clouds{filter:none}.entry-choice-clouds i{box-shadow:none;transition-duration:.7s}
+.entry-choice-orbit{animation:none;border:0;width:360px}.entry-choice-orbit::before{display:none}
+.entry-choice-option{animation:none;backdrop-filter:none;box-shadow:none;background:none!important;border:0;width:160px;height:160px;padding:0}
+.entry-choice-option img{width:140px;height:140px}.entry-choice-option strong{position:absolute;top:60%;left:50%;transform:translate(-50%,-50%);margin:0;font:500 13px Inter,sans-serif}
+.entry-choice-core>p{top:8%}.ld-txt{animation:none!important}
+@media(prefers-reduced-motion:reduce){#speed-unlock::before,#speed-unlock::after{display:none}#speed-unlock strong,#speed-unlock span{animation:none}}

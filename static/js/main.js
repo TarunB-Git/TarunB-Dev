@@ -182,6 +182,8 @@ function setStageVisibility(path, view = shellMode) {
   shellMode = view;
   homeView = view;
   document.body.dataset.shellMode = shellMode;
+  if (path) document.body.dataset.path = path;
+  else delete document.body.dataset.path;
   if (path) delete document.body.dataset.homeView; else document.body.dataset.homeView = view;
   document.querySelectorAll('.ps').forEach(panel => {
     const selected = panel.id === `ps-${path}`;
@@ -193,7 +195,7 @@ function setStageVisibility(path, view = shellMode) {
   const directoryVisible = view === 'directory';
   directory?.classList.toggle('out', !directoryVisible);
   directory?.setAttribute('aria-hidden', String(!directoryVisible));
-  if (directory) directory.inert = !directoryVisible || Boolean(path);
+  if (directory) directory.inert = !directoryVisible;
   const world = $('s-world');
   const worldVisible = !path && view === 'world';
   world?.classList.toggle('out', !worldVisible);
@@ -209,6 +211,7 @@ export function goPath(id, options = {}) {
   try { localStorage.setItem(SHELL_KEY, shellMode); } catch { /* preference storage is optional */ }
   const mode = id === 'recruiter' ? Boolean(options.mode) : false;
   if (activePath === id) {
+    setStageVisibility(id, shellMode);
     if (id === 'recruiter') setRecruiterMode(mode, options.animate !== false);
     writeHistory(options.history, pathUrl(id, mode, shellMode), { path: id, mode, shellMode });
     return;

@@ -3,6 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+// Keep the desktop composition on phones; enlarge only game controls.
+if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
+  document.querySelector('meta[name="viewport"]').content = 'width=980';
+  const sizeTouchControls = () => {
+    const wide = matchMedia('(orientation: landscape)').matches;
+    const width = wide ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    document.documentElement.style.setProperty('--touch-ui-scale', String(Math.max(1, 980 / width)));
+  };
+  sizeTouchControls(); addEventListener('resize', sizeTouchControls);
+}
+</script>
 <title>Choose Your Path</title>
 <meta name="description" content="An interactive four-path portfolio: recruiter, friend, curious viewer, or personal.">
 <meta name="theme-color" content="#03050c">
