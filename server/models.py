@@ -180,6 +180,8 @@ class CardDocument(EditableDocument):
     phone_display: str = Field(default="", max_length=80)
     url: str = Field(default="", max_length=2048)
     cal_link: str = Field(default="", max_length=2048)
+    github_url: str = Field(default="", max_length=2048)
+    linkedin_url: str = Field(default="", max_length=2048)
     tagline: str = Field(default="", max_length=1000)
     footer: str = Field(default="", max_length=300)
     chips: list[str] = Field(default_factory=list, max_length=30)
@@ -188,7 +190,7 @@ class CardDocument(EditableDocument):
     selected_work: list[SelectedWorkDocument] = Field(default_factory=list, max_length=100)
     career: list[CareerDocument] = Field(default_factory=list, max_length=100)
 
-    @field_validator("url", "cal_link")
+    @field_validator("url", "cal_link", "github_url", "linkedin_url")
     @classmethod
     def optional_http_url(cls, value: str) -> str:
         return safe_http_url(value) if value.strip() else ""

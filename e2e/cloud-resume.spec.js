@@ -37,8 +37,9 @@ test('cloud geometry loads and movement renders without runtime errors', async (
   await expect(page.locator('#s-world canvas')).toBeVisible();
   await page.waitForTimeout(3500);
   const geometry = await page.evaluate(() => window.cloudTestProbe());
-  expect(geometry.solids).toBeGreaterThan(4);
-  expect(geometry.scroll).toBeGreaterThan(27);
+  expect(geometry.solids).toBeGreaterThanOrEqual(2);
+  expect(geometry.scroll).toBeGreaterThan(10);
+  expect(geometry.scroll).toBeLessThan(17);
   expect(geometry.maxHeight).toBeGreaterThan(geometry.scroll);
   await page.screenshot({ path: '/tmp/cloud-collision-start.png' });
   await page.keyboard.down('w');

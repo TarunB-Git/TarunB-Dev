@@ -397,6 +397,8 @@ async function renderCard() {
       { key: 'status', label: 'Availability status' }, { key: 'updated', label: 'Updated label' },
       { key: 'email', label: 'Email', type: 'email', required: true }, { key: 'phone', label: 'Phone URI value' },
       { key: 'phone_display', label: 'Phone display' }, { key: 'url', label: 'Website', type: 'url' },
+      { key: 'github_url', label: 'GitHub profile URL', type: 'url' },
+      { key: 'linkedin_url', label: 'LinkedIn profile URL', type: 'url' },
       { key: 'cal_link', label: 'Booking URL', type: 'url' }, { key: 'tagline', label: 'Tagline', type: 'textarea', wide: true },
       { key: 'footer', label: 'Footer', wide: true },
     ],

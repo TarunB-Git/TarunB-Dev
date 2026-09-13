@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from starlette.datastructures import Headers
 
 from server import db
-from server.models import CommentIn, MessageIn, PostIn, ReactionIn, StatEventIn, TimelineEventIn, TimelinePeriodIn
+from server.models import CardDocument, CommentIn, MessageIn, PostIn, ReactionIn, StatEventIn, TimelineEventIn, TimelinePeriodIn
 from server.routers import v1
 
 
@@ -21,6 +21,16 @@ def request(*, cookie: str = "", path: str = "/") -> Request:
         "client": ("127.0.0.2", 1234), "server": ("testserver", 80),
         "scheme": "http", "query_string": b"",
     })
+
+
+def test_business_card_social_profile_urls():
+    card = CardDocument(github_url="https://github.com/example", linkedin_url="https://www.linkedin.com/in/example")
+    assert card.github_url == "https://github.com/example"
+    assert card.linkedin_url == "https://www.linkedin.com/in/example"
+    assert CardDocument().github_url == ""
+    for field in ("github_url", "linkedin_url"):
+        with pytest.raises(ValidationError):
+            CardDocument(**{field: "javascript:alert(1)"})
 
 
 def test_grouped_timeline_order_and_validated_links():

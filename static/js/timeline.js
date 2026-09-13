@@ -409,7 +409,7 @@ function setupController(container, timeline, scrollRoot, desktop) {
             : event.layout === 'lower' ? .2 : .12;
         const narrativeBase = event.layout === 'feature' ? .5
           : event.layout === 'media-right' ? .65 : .3;
-        const base = timeline.path === 'personal' ? .68
+        const base = timeline.path === 'personal' ? .5
           : timeline.path === 'recruiter' ? recruiterBase : narrativeBase;
         const local = clamp(base + eventIndex * .17, .08, .76);
         node.style.setProperty('--event-x', `${((periodIndex + local) / Math.max(1, count)) * 100}%`);
@@ -649,6 +649,10 @@ export async function renderTimeline(container, path, scrollRoot, fallbackTimeli
   let timeline = await loadTimeline(path);
   const usesFallback = !timeline.periods.length && fallbackTimeline;
   if (usesFallback) timeline = normalizeTimeline(fallbackTimeline, path);
+  // Each scroll entry gets its own span of parchment. Multiple entries in a
+  // period must not share a nearly identical x-position and overlap.
+  if (path === 'personal') timeline = { ...timeline, periods: timeline.periods.flatMap(period =>
+    period.events.length ? period.events.map(event => ({ ...period, events: [event] })) : [period]) };
   container.timelineData = timeline;
   container.dataset.timelineSample = String(Boolean(usesFallback));
   container.innerHTML = '';

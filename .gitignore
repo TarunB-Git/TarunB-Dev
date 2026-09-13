@@ -1,4 +1,5 @@
 .env
+server/site.db
 .pytest_cache/
 __pycache__/
 *.py[cod]
@@ -9,4 +10,3 @@ server/site.db-shm
 server/site.db-wal
 server/uploads/
 server/backups/
-
