@@ -54,6 +54,7 @@ let navTick = 0;
 let scrollBoard;
 let adminBoard;
 let scrollShelfHeight = UPPER_TERRACE_Y + 2.2;
+let upperCloudFallbackY = UPPER_TERRACE_Y;
 let shipBoundsY = { min: -17, max: 17 };
 let scrollBoundsY = { min: -.2, max: .2 };
 let moonBoundsY = { min: -5.25, max: 5.25 };
@@ -624,7 +625,16 @@ function upperCloudBandAt(x, z) {
   groundRaycaster.far = 250;
   upperCloudVisual.updateWorldMatrix(true, false);
   const hits = groundRaycaster.intersectObject(upperCloudVisual, true);
-  if (!hits.length) return null;
+  // The authored mesh thins out at the enclosing side walls. Keep the same
+  // invisible collision band there so the wall cannot become a shortcut to
+  // the upper level, or an accidental drop from it. Only the torn opening is
+  // allowed to break this band.
+  if (!hits.length) {
+    return {
+      top: upperCloudFallbackY,
+      bottom: upperCloudFallbackY - UPPER_TERRACE_THICKNESS,
+    };
+  }
   const top = hits[0].point.y;
   const lowestHit = hits[hits.length - 1].point.y;
   return {
@@ -1221,6 +1231,14 @@ function addShipCloudScenery(gltf) {
   ));
   cloud.rotation.set(Math.PI, -.08, 0);
   cloud.position.set(0, innerWidth < 620 ? 21 : 24, -16);
+  // The source cloud is unusually deep. Preserve its established walkable
+  // top while compressing the empty lower mass into a single cloud layer.
+  cloud.updateMatrixWorld(true);
+  const previousCloudTop = new THREE.Box3().setFromObject(cloud).max.y;
+  cloud.scale.y *= .4;
+  cloud.updateMatrixWorld(true);
+  cloud.position.y += previousCloudTop - new THREE.Box3().setFromObject(cloud).max.y;
+  upperCloudFallbackY = previousCloudTop - 1.5;
   group.add(cloud);
   upperCloudVisual = cloud;
 

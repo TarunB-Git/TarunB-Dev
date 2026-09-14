@@ -13,6 +13,7 @@ assert.ok(!source.includes('createWorldBoard'), 'Scattered board system is remov
 assert.ok(source.includes('scrollCloudY + .1 - scrollBoundsY.min'), 'Scroll rests on the sampled cloud surface');
 assert.ok(!source.includes('function createUpperTerrace'), 'No separate flat upper shelf is rendered');
 assert.ok(source.includes('function upperCloudBandAt'), 'The visible upper cloud supplies its own collision band');
+assert.ok(source.includes('cloud.scale.y *= .4'), 'The redundant lower cloud mass is compressed into the walkable layer');
 assert.ok(source.includes('carvePassageThroughCloud(cloud)'), 'The decorative cloud is opened at the real passage');
 assert.ok(source.includes('cloudSolids.push(envelope)'), 'The enclosing top cloud participates in camera collision');
 assert.ok(source.includes('maxFlightHeight = TOP_CEILING_Y - 1.9'), 'The top cloud limits player ascent');
@@ -44,7 +45,8 @@ const state = vm.createContext({
   THREE, PLATFORM: { top: 0 }, PASSAGE: { x: 0, z: 0, radius: 8 },
   PLAYER_RADIUS: .42, PLAYER_HEIGHT: 1.9, UPPER_TERRACE_Y: 27, UPPER_TERRACE_THICKNESS: 2.4,
   CLOUD_CEILING_CENTER_Y: 17, CLOUD_CEILING_RADIUS_Y: 42,
-  TOP_CEILING_Y: 59, maxFlightHeight: 57.1, cloudFloorVisual: floor, upperCloudVisual: upperCloud,
+  TOP_CEILING_Y: 59, maxFlightHeight: 57.1, upperCloudFallbackY: 31.75,
+  cloudFloorVisual: floor, upperCloudVisual: upperCloud,
   groundProbeOrigin: new THREE.Vector3(), groundProbeDirection: new THREE.Vector3(0, -1, 0),
   groundRaycaster: new THREE.Raycaster(), cloudSweep: new THREE.Raycaster(),
   sweepDirection: new THREE.Vector3(), cloudSolids: [floor],
@@ -57,9 +59,12 @@ for (const name of ['passageRadiusAt', 'inUpperPassage', 'ceilingHeightAt', 'low
 }
 assert.equal(state.groundHeightAt(0, 0, 32), .08, 'The central opening exposes the lower floor');
 assert.equal(state.groundHeightAt(12, 0, 32), 29.08, 'The rendered cloud top is the walkable upper floor');
+assert.equal(state.groundHeightAt(30, 0, 32), 31.83, 'The cloud collision band remains sealed at the side walls');
 assert.equal(state.resolveVerticalTravel(20, 32, 12, 0).surface, 'cloud-underside', 'Flight cannot cross the cloud outside the opening');
+assert.equal(state.resolveVerticalTravel(20, 32, 30, 0).surface, 'cloud-underside', 'The side walls cannot bypass the upper cloud');
 assert.equal(state.resolveVerticalTravel(20, 32, 0, 0).y, 32, 'Flight crosses the terrace through the opening');
 assert.equal(state.resolveVerticalTravel(32, 20, 12, 0).surface, 'cloud-top', 'Falling outside the opening lands on the cloud');
+assert.equal(state.resolveVerticalTravel(32, 20, 30, 0).surface, 'cloud-top', 'The upper level has no fall-through edge at the walls');
 assert.ok(state.resolveVerticalTravel(50, 70, 0, 0).y <= 56.9, 'The enclosing crown caps flight');
 assert.notEqual(state.passageRadiusAt(0), state.passageRadiusAt(Math.PI / 3), 'The opening is not circular');
 state.player.position.set(0, 24.5, 0);
