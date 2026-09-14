@@ -1,87 +1,40 @@
-// Exercise the same geometry and containment functions used by the game.
+// Numerical checks for Cloud traversal; no browser or rendering required.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
-import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassage, constrainCloudPoint, terraceHeightAt, setCloudRelief } from '../static/js/cloud-space.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
 const source = fs.readFileSync(new URL('../static/js/graybox.js', import.meta.url), 'utf8');
 const guideSource = fs.readFileSync(new URL('../static/js/cloud-guide.js', import.meta.url), 'utf8');
-const html = fs.readFileSync(new URL('../static/index.html', import.meta.url), 'utf8');
-assert.ok(!html.includes('id="entry-choice"'), 'Obsolete first-visit chooser is removed');
-assert.ok(!html.includes('id="ld-txt"'), 'Loading screen has no text label');
-assert.ok(source.includes("cloudChamber.name = 'Ship cloud · welded floor, walls and ceiling'"));
-assert.ok(source.includes('new THREE.Mesh(faceGeometry, faceMaterial.clone())'), 'World posters have a readable reverse face');
-assert.ok(guideSource.includes('new THREE.PerspectiveCamera'), 'Compass arrow retains real 3D perspective');
-const geometry = createCloudGeometry();
-const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
-const shell = new THREE.Mesh(geometry.shell, material);
-const terrace = new THREE.Mesh(geometry.terrace, material);
-// Include the actual authored asset in the geometry regression, without GPU textures.
-const binary = fs.readFileSync(new URL('../static/assets/models/ship_in_clouds.glb', import.meta.url));
-const length = binary.readUInt32LE(12), asset = JSON.parse(binary.subarray(20, 20 + length));
-asset.buffers[0].uri = 'data:application/octet-stream;base64,' + binary.subarray(28 + length).toString('base64');
-delete asset.images; delete asset.textures; asset.materials = [];
-for (const mesh of asset.meshes) for (const primitive of mesh.primitives) delete primitive.material;
-globalThis.ProgressEvent = class {};
-const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
-const gltf = await loader.parseAsync(JSON.stringify(asset), '');
-assert.ok(gltf.scene.getObjectByName('Cloud_Poly_Poly_0'));
-const reliefContext = vm.createContext({ THREE, setCloudRelief, createCloudGeometry, cloudChamber: shell, upperCloudVisual: terrace, applyLandmarkLayout() {}, boardObject: null });
-const reliefStart = source.indexOf('function restoreAuthoredCloudRelief(');
-vm.runInContext(source.slice(reliefStart, source.indexOf('\n}', reliefStart) + 2), reliefContext);
-reliefContext.restoreAuthoredCloudRelief(gltf);
-shell.updateMatrixWorld(true); terrace.updateMatrixWorld(true);
-const ray = new THREE.Raycaster();
-let samples = 0;
-for (let x = -44; x <= 44; x += 3) for (let z = -62; z <= 62; z += 3) {
-  if (Math.hypot(x / 48, z / 68) > .94) continue;
-  ray.set(new THREE.Vector3(x, 100, z), new THREE.Vector3(0, -1, 0)); ray.far = 200;
-  const hits = ray.intersectObject(shell);
-  assert.ok(hits.length >= 2, 'Closed floor and ceiling at ' + x + ',' + z);
-  const shelfHits = ray.intersectObject(terrace);
-  if (Math.hypot(x, z) < 7.8) assert.equal(shelfHits.length, 0);
-  else if (Math.hypot(x, z) > 8.2) assert.ok(shelfHits.length >= 2, 'Complete middle floor');
-  const clamped = constrainCloudPoint(new THREE.Vector3(x, 200, z));
-  assert.ok(clamped.y + 1.8 < hits[0].point.y, 'Ceiling containment leaves headroom');
-  samples++;
-}
-for (let x = -5; x <= 5; x++) for (let z = 32; z <= 42; z++) {
-  assert.ok(lowerFloorAt(x, z) < 2.2, 'Starting area retains modest relief, not huge mounds');
-}
+assert.ok(source.includes("import { createCloudGuide } from './cloud-guide.js'"), 'Current 3D guide remains connected');
+assert.ok(guideSource.includes('new THREE.PerspectiveCamera'), 'Current perspective arrow remains intact');
+assert.equal((source.match(/function createScrollBoard\(/g) || []).length, 1, 'Exactly one world board remains');
+assert.ok(!source.includes('createWorldBoard'), 'Scattered board system is removed');
+const floor = new THREE.Mesh(new THREE.BoxGeometry(40, 2, 40), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+floor.position.y = -1;
+const shelf = new THREE.Mesh(new THREE.BoxGeometry(40, 6, 40), floor.material.clone());
+shelf.position.y = 20;
+floor.updateMatrixWorld(true); shelf.updateMatrixWorld(true);
 const state = vm.createContext({
-  THREE, CLOUD_SPACE, lowerFloorAt, upperCeilingAt, inPassage, terraceHeightAt, PLAYER_RADIUS: .42,
-  cloudSweep: new THREE.Raycaster(), sweepDirection: new THREE.Vector3(),
-  cloudSolids: [shell, terrace], player: { position: new THREE.Vector3(0, 1, 38) },
+  THREE, PLATFORM: { top: 0 }, cloudFloorVisual: floor, upperCloudVisual: shelf,
+  groundProbeOrigin: new THREE.Vector3(), groundProbeDirection: new THREE.Vector3(0, -1, 0),
+  groundRaycaster: new THREE.Raycaster(), cloudSweep: new THREE.Raycaster(),
+  sweepDirection: new THREE.Vector3(), cloudSolids: [floor, shelf],
+  player: { position: new THREE.Vector3(0, 18, 0) }, flightMode: true, grounded: false,
+  cameraSoftClouds: new Set(),
 });
-for (const name of ['groundHeightAt', 'cloudClearance', 'moveThroughClouds']) {
-  const start = source.indexOf('function ' + name + '(');
-  vm.runInContext(source.slice(start, source.indexOf('\n}', start) + 2), state);
+for (const name of ['groundHeightAt', 'cloudClearance', 'moveThroughClouds', 'updateCloudPassageOpacity']) {
+  const start = source.indexOf(`function ${name}(`);
+  const end = source.indexOf('\n}', start) + 2;
+  vm.runInContext(source.slice(start, end), state);
 }
-assert.equal(state.cloudClearance(new THREE.Vector3(0, 3, 0), new THREE.Vector3(0, 20, 0), .2), 1);
-assert.equal(state.cloudClearance(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, 3, 0), .2), 1);
-assert.ok(state.cloudClearance(new THREE.Vector3(14, 3, 8), new THREE.Vector3(14, 35, 8), .2) < 1);
-assert.ok(state.cloudClearance(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, 100, 0), .2) < 1);
-assert.equal(state.groundHeightAt(14, 8, 35), terraceHeightAt(14, 8) + .12);
-assert.ok(state.groundHeightAt(0, 0, 35) < 2.2);
-assert.ok(upperCeilingAt(-10, -17) > CLOUD_SPACE.terraceY + 18 + 2, 'Ship clears ceiling');
-console.log('Cloud checks passed: ' + samples + ' floor/ceiling samples, continuous middle floor, shallow spawn and two-way opening.');
-
-// Held touch descent survives movement outside the button until release.
-const handlers = new Map();
-const drop = { addEventListener: (name, fn) => handlers.set(name, fn), setPointerCapture() {} };
-const input = vm.createContext({
-  touchDropHeld: false, touchFlightCruise: true, verticalVelocity: 0,
-  $: () => null, endSpaceInput() {}, setStatus() {},
-});
-const bindStart = source.indexOf('function bindTouchControls(');
-vm.runInContext(source.slice(bindStart, source.indexOf('\n}', bindStart) + 2), input);
-input.bindTouchControls({ querySelector: selector => selector === '[data-graybox-action="drop"]' ? drop : null });
-handlers.get('pointerdown')({ pointerId: 1, preventDefault() {}, stopPropagation() {} });
-assert.equal(input.touchDropHeld, true);
-assert.equal(input.touchFlightCruise, false);
-assert.equal(handlers.has('pointerleave'), false, 'Captured hold is not cancelled by drifting off button');
-handlers.get('pointerup')();
-assert.equal(input.touchDropHeld, false);
-console.log('Touch checks passed: held Drop, pointer capture and release.');
+assert.equal(state.groundHeightAt(0, 0, 18), .08, 'Inside a cloud must not land on its underside');
+assert.equal(state.groundHeightAt(0, 0, 24), 23.08, 'Above a cloud lands on its upper surface');
+assert.equal(state.moveThroughClouds(5, 5).x, 5, 'Flying is not blocked by cloud sides');
+state.updateCloudPassageOpacity(1);
+assert.equal(shelf.material.opacity, .12, 'A cloud becomes transparent while passing through');
+state.player.position.y = 26;
+state.updateCloudPassageOpacity(1);
+assert.equal(shelf.material.opacity, 1, 'Cloud appearance returns above the shelf');
+assert.equal(state.cameraSoftClouds.size, 0, 'Normal camera protection returns after passage');
+console.log('Cloud traversal checks passed.');
