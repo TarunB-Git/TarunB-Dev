@@ -33,22 +33,17 @@ const LANDMARK_ANCHORS = {
 const MOON_REQUIREMENTS = ['viewer', 'personal', 'recruiter'];
 const SPAWN = new THREE.Vector3(0, PLATFORM.top, 38);
 const PASSAGE = { x: 0, z: 0, radius: 8 };
+const TOP_CEILING_Y = 45;
 const FOCUS_DURATION = 2.4;
 const FOCUS_IN = 0.42;
 const FOCUS_OUT = 0.72;
 const DOUBLE_SPACE_WINDOW = 360;
 const HOLD_TO_FLY_DELAY = 0.48;
-let maxFlightHeight = 48;
+let maxFlightHeight = TOP_CEILING_Y - 1.9;
 let upperCloudVisual;
-let middleCloudVisual;
-let ceilingCollider;
-let firstLevelHeight = 8.5;
-let ceilingHeight = 16;
 let guide;
 let navTick = 0;
 let scrollBoard;
-let adminBoard;
-let scrollBoardTimer = 0;
 let scrollShelfHeight = 30;
 const cloudSolids = [];
 const SPEED_TAP_WINDOW = 330;
@@ -151,15 +146,13 @@ function loadBirdChaseStep() {
 
 function applyLandmarkLayout() {
   const portrait = innerWidth < 620;
-  firstLevelHeight = portrait ? 7.5 : 8.5;
   OBJECT_POS.set(portrait ? -6 : -8, PLATFORM.top, portrait ? -24 : -27);
-  SHIP_POS.set(portrait ? -2 : 0, firstLevelHeight, portrait ? -27 : -32);
+  SHIP_POS.set(portrait ? -2 : 0, portrait ? 7.5 : 8.5, portrait ? -27 : -32);
   MOON_FAR_POS.set(portrait ? 12 : 20, portrait ? 18 : 19, portrait ? -44 : -50);
-  MOON_LAND_POS.set(portrait ? 4 : 6, portrait ? 5.5 : 5.7, portrait ? 4 : 6);
+  MOON_LAND_POS.set(portrait ? 12 : 20, portrait ? 8 : 8, portrait ? -39 : -44);
   if (moonState !== 'falling') MOON_POS.copy(moonState === 'landed' ? MOON_LAND_POS : MOON_FAR_POS);
-  // The scroll and its notice board share the ship's walkable cloud floor.
-  SCROLL_POS.set(SPAWN.x, firstLevelHeight + 1.05, SPAWN.z);
-  scrollShelfHeight = firstLevelHeight;
+  // Keep the scroll over the starting point, lowered to the ship's level.
+  SCROLL_POS.set(SPAWN.x, SHIP_POS.y + 1.05, SPAWN.z);
   BIRD_CHASE_POINTS[0].set(portrait ? -2 : -3, portrait ? 8 : 9, portrait ? 15 : 13);
   BIRD_CHASE_POINTS[1].set(portrait ? 6 : 8, portrait ? 7.5 : 8.5, portrait ? 43 : 45);
   BIRD_CHASE_POINTS[2].set(portrait ? -9 : -12, portrait ? 9 : 10, portrait ? 5 : 2);
@@ -179,9 +172,7 @@ function applyLandmarkLayout() {
     record.baseY = position.y;
     record.focus.copy(position);
   });
-  if (middleCloudVisual) middleCloudVisual.position.y = firstLevelHeight;
-  if (ceilingCollider) ceilingCollider.position.y = ceilingHeight;
-  if (scrollBoard) scrollBoard.position.set(SCROLL_POS.x + 5.8, firstLevelHeight + 2.2, SCROLL_POS.z - 1.5);
+  if (scrollBoard) scrollBoard.position.set(SCROLL_POS.x + 5.8, SHIP_POS.y + 2.2, SCROLL_POS.z - 1.5);
 }
 
 export function canUseWebGL() {
@@ -547,69 +538,6 @@ function buildPlatform() {
 
 }
 
-function insidePassage(x, z, padding = 0) {
-  return Math.hypot(x - PASSAGE.x, z - PASSAGE.z) < Math.max(0, PASSAGE.radius - padding);
-}
-
-function buildMiddleCloudLayer(texture) {
-  middleCloudVisual?.removeFromParent();
-  ceilingCollider?.removeFromParent();
-
-  /* A single annular surface gives the middle storey one dependable opening.
-     Its small ripples keep the restored faceted-cloud language without making
-     the gameplay surface difficult to read or walk on. */
-  let geometry = new THREE.RingGeometry(PASSAGE.radius, 58, 112, 12);
-  const positions = geometry.attributes.position;
-  const colors = [];
-  const low = new THREE.Color(0x6b607d);
-  const high = new THREE.Color(0xa08ba1);
-  for (let index = 0; index < positions.count; index += 1) {
-    const x = positions.getX(index);
-    const y = positions.getY(index);
-    const ripple = Math.sin(x * .34 + y * .19) * .11 + Math.cos(y * .27 - x * .13) * .07;
-    positions.setZ(index, ripple);
-    const shade = THREE.MathUtils.clamp(.52 + ripple * 1.25, .12, .92);
-    const color = low.clone().lerp(high, shade);
-    colors.push(color.r, color.g, color.b);
-  }
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.rotateX(-Math.PI / 2);
-  geometry.computeVertexNormals();
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    vertexColors: true,
-    map: texture,
-    bumpMap: texture,
-    bumpScale: .08,
-    emissive: 0x21192f,
-    emissiveIntensity: .22,
-    roughness: 1,
-    metalness: 0,
-    flatShading: true,
-    side: THREE.DoubleSide,
-  });
-  middleCloudVisual = new THREE.Mesh(geometry, material);
-  middleCloudVisual.position.set(PASSAGE.x, firstLevelHeight, PASSAGE.z);
-  middleCloudVisual.receiveShadow = true;
-  middleCloudVisual.name = 'Solid middle cloud floor with central passage';
-  scene.add(middleCloudVisual);
-
-  ceilingCollider = new THREE.Mesh(
-    new THREE.PlaneGeometry(116, 116),
-    new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      colorWrite: false,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  ceilingCollider.rotation.x = -Math.PI / 2;
-  ceilingCollider.position.y = ceilingHeight;
-  ceilingCollider.name = 'Solid upper cloud ceiling';
-  scene.add(ceilingCollider);
-}
-
 function groundHeightAt(x, z, probeY = 100) {
   if (!cloudFloorVisual) return PLATFORM.top;
   // The imported clouds have inward-facing normals. Probe each whole shelf
@@ -618,9 +546,9 @@ function groundHeightAt(x, z, probeY = 100) {
   groundRaycaster.set(groundProbeOrigin, groundProbeDirection);
   groundRaycaster.near = 0;
   groundRaycaster.far = 250;
+  cloudFloorVisual.updateWorldMatrix(true, false);
   const surfaces = [cloudFloorVisual];
-  if (middleCloudVisual && probeY < 100) surfaces.push(middleCloudVisual);
-  surfaces.forEach(surface => surface.updateWorldMatrix(true, false));
+  if (upperCloudVisual && probeY < 100) surfaces.push(upperCloudVisual);
   const hit = surfaces.map(surface => groundRaycaster.intersectObject(surface, true)[0])
     .filter(candidate => candidate && candidate.point.y <= probeY)
     .sort((a, b) => b.point.y - a.point.y)[0];
@@ -662,26 +590,6 @@ function moveThroughClouds(x, z) {
     next[axis] += (value - next[axis]) * fraction;
   }
   return next;
-}
-
-function constrainVerticalCloudLevels(previousY) {
-  if (!player) return;
-  const playerHeight = 1.8;
-  const underMiddle = firstLevelHeight - playerHeight - .08;
-  const throughOpening = insidePassage(player.position.x, player.position.z, PLAYER_RADIUS + .28);
-
-  // Outside the opening, the middle cloud has a solid underside as well as a
-  // walkable top. The central passage remains open in both directions.
-  if (!throughOpening && previousY <= underMiddle && player.position.y > underMiddle) {
-    player.position.y = underMiddle;
-    verticalVelocity = Math.min(verticalVelocity, 0);
-  }
-
-  const highestFeet = ceilingHeight - playerHeight - .12;
-  if (player.position.y > highestFeet) {
-    player.position.y = highestFeet;
-    verticalVelocity = Math.min(verticalVelocity, 0);
-  }
 }
 
 function createCloudSurfaceTexture() {
@@ -1049,16 +957,11 @@ function updateMoonFall(delta) {
   const duration = reducedMotion.matches ? 0.2 : 4.2;
   moonFallElapsed = Math.min(duration, moonFallElapsed + delta);
   const raw = moonFallElapsed / duration;
-  const ease = value => value * value * (3 - 2 * value);
-  const abovePassage = new THREE.Vector3(PASSAGE.x, firstLevelHeight + 3.8, PASSAGE.z);
-  const belowPassage = new THREE.Vector3(PASSAGE.x, firstLevelHeight - 4.8, PASSAGE.z);
-  if (raw < .42) {
-    record.object.position.lerpVectors(MOON_FAR_POS, abovePassage, ease(raw / .42));
-  } else if (raw < .72) {
-    record.object.position.lerpVectors(abovePassage, belowPassage, ease((raw - .42) / .3));
-  } else {
-    record.object.position.lerpVectors(belowPassage, MOON_LAND_POS, ease((raw - .72) / .28));
-  }
+  const lateral = raw * raw * (3 - 2 * raw);
+  const fall = raw * raw;
+  record.object.position.x = THREE.MathUtils.lerp(MOON_FAR_POS.x, MOON_LAND_POS.x, lateral);
+  record.object.position.z = THREE.MathUtils.lerp(MOON_FAR_POS.z, MOON_LAND_POS.z, lateral);
+  record.object.position.y = THREE.MathUtils.lerp(MOON_FAR_POS.y, MOON_LAND_POS.y, fall);
   record.baseY = record.object.position.y;
   record.focus.copy(record.object.position);
   landmarkFocus.copy(record.object.position);
@@ -1226,14 +1129,12 @@ function addShipCloudScenery(gltf) {
   scene.add(group);
   scene.userData.cloudInterior = group;
   group.updateMatrixWorld(true);
-  const upperBounds = new THREE.Box3().setFromObject(cloud);
-  ceilingHeight = Math.max(firstLevelHeight + 5.5, upperBounds.min.y - .35);
-  scrollShelfHeight = firstLevelHeight;
-  maxFlightHeight = ceilingHeight - 1.92;
-  buildMiddleCloudLayer(detail);
   cloudSolids.length = 0;
   group.traverse(node => { if (node.isMesh) cloudSolids.push(node); });
-  cloudSolids.push(middleCloudVisual, ceilingCollider);
+  const shelf = new THREE.Raycaster(new THREE.Vector3(SPAWN.x, 150, SPAWN.z), groundProbeDirection, 0, 250).intersectObject(cloud, true)[0];
+  const upperBounds = new THREE.Box3().setFromObject(cloud);
+  scrollShelfHeight = (shelf?.point.y ?? upperBounds.max.y) + 2.2;
+  maxFlightHeight = TOP_CEILING_Y - 1.9;
   const envelope = scene.userData.cloudEnvelope;
   if (envelope) cloudSolids.push(envelope);
   applyLandmarkLayout();
@@ -1241,7 +1142,6 @@ function addShipCloudScenery(gltf) {
      cloud pockets instead of being bridged by a hidden rectangular plane. */
   if (platformVisual) platformVisual.visible = false;
   createScrollBoard();
-  createAdminBoard();
 }
 
 function createScrollBoard() {
@@ -1263,7 +1163,7 @@ function createScrollBoard() {
     new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: .94 }),
   );
   scrollBoard.add(frame, front, back);
-  scrollBoard.position.set(SCROLL_POS.x + 5.8, firstLevelHeight + 2.2, SCROLL_POS.z - 1.5);
+  scrollBoard.position.set(SCROLL_POS.x + 5.8, SHIP_POS.y + 2.2, SCROLL_POS.z - 1.5);
   scrollBoard.rotation.y = -.35;
   scene.add(scrollBoard);
 
@@ -1301,41 +1201,6 @@ function createScrollBoard() {
   };
   scrollBoard.userData.refresh = refresh;
   refresh();
-  clearInterval(scrollBoardTimer);
-  scrollBoardTimer = window.setInterval(refresh, 60_000);
-}
-
-function createAdminBoard() {
-  adminBoard?.removeFromParent();
-  adminBoard = new THREE.Group();
-  adminBoard.name = 'Lower-pocket admin board';
-  const canvas = document.createElement('canvas');
-  canvas.width = 640; canvas.height = 360;
-  const context = canvas.getContext('2d');
-  context.fillStyle = '#221a2b'; context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = '#b79a66'; context.lineWidth = 12; context.strokeRect(18, 18, 604, 324);
-  context.fillStyle = '#eadbbd'; context.textAlign = 'center'; context.font = '600 34px serif';
-  context.fillText('KEEPER ACCESS', 320, 158);
-  context.fillStyle = '#b9a98d'; context.font = '21px sans-serif';
-  context.fillText('Click to open the admin console', 320, 210);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const geometry = new THREE.PlaneGeometry(4.8, 2.7);
-  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide });
-  const front = new THREE.Mesh(geometry, material);
-  front.position.z = .08;
-  const back = new THREE.Mesh(geometry, material.clone());
-  back.position.z = -.08;
-  back.rotation.y = Math.PI;
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(5.05, 2.95, .16),
-    new THREE.MeshStandardMaterial({ color: 0x443245, roughness: .95 }),
-  );
-  adminBoard.add(frame, front, back);
-  adminBoard.traverse(node => { if (node.isMesh) node.userData.adminTarget = true; });
-  adminBoard.position.set(0, PLATFORM.top - 5.95, SPAWN.z - 7);
-  adminBoard.rotation.y = Math.PI;
-  scene.add(adminBoard);
 }
 
 async function loadShipLandmark() {
@@ -1588,8 +1453,7 @@ function bindEvents() {
   canvas?.addEventListener('pointerup', event => {
     if (drag?.id === event.pointerId && !drag.moved) {
       const id = landmarkAt(event.clientX, event.clientY);
-      if (id === '__admin__') window.location.assign('/admin');
-      else if (id) interact(id);
+      if (id) interact(id);
     }
     drag = null;
   });
@@ -1739,7 +1603,6 @@ function updateBirdChase(delta) {
 
 function updateMovement(delta) {
   if (!player || interactionFocus > 0) return;
-  const previousY = player.position.y;
   speedBoostRemaining = Math.max(0, speedBoostRemaining - delta);
   const boost = speedBoostRemaining > 0 ? 2 : 1;
   const boostUi = $('speed-boost');
@@ -1800,7 +1663,6 @@ function updateMovement(delta) {
     }
   }
 
-  constrainVerticalCloudLevels(previousY);
   updateBirdChase(delta);
 
   const isMoving = Math.abs(moveAxis) > 0.05;
@@ -1913,17 +1775,15 @@ function setStatus(message) {
 }
 
 function landmarkAt(clientX, clientY) {
-  if (!raycaster || !camera) return null;
+  if (!raycaster || !camera || !landmarks.size) return null;
   const rect = $('three-canvas').getBoundingClientRect();
   pointerNdc.set(
     ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
     -((clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1,
   );
   raycaster.setFromCamera(pointerNdc, camera);
-  const targets = [...landmarks.values()].map(record => record.object);
-  if (adminBoard) targets.push(adminBoard);
-  const hit = raycaster.intersectObjects(targets, true)[0];
-  return hit?.object?.userData?.adminTarget ? '__admin__' : (hit?.object?.userData?.landmarkId || null);
+  const hit = raycaster.intersectObjects([...landmarks.values()].map(record => record.object), true)[0];
+  return hit?.object?.userData?.landmarkId || null;
 }
 
 function updateObjectHover(x, y) {
@@ -1937,12 +1797,23 @@ function setObjectHovered(id) {
 
 function updateCloudPassageOpacity(delta) {
   cameraSoftClouds.clear();
-  if (!upperCloudVisual) return;
-  // The overhead cloud is now the sealed ceiling, so it never fades or opens.
+  if (!upperCloudVisual || !player) return;
+  // Preserve visibility when rising through the middle shelf. The enclosing
+  // cloud remains opaque and solid as the world's upper boundary.
+  groundProbeOrigin.set(player.position.x, 150, player.position.z);
+  groundRaycaster.set(groundProbeOrigin, groundProbeDirection);
+  groundRaycaster.near = 0;
+  groundRaycaster.far = 250;
+  const crossings = groundRaycaster.intersectObject(upperCloudVisual, true);
+  const top = crossings[0]?.point.y;
+  const bottom = crossings[crossings.length - 1]?.point.y;
+  const withinShelf = crossings.length > 1 && player.position.y + 2 > bottom && player.position.y < top + .5;
   upperCloudVisual.traverse(node => {
     if (!node.isMesh) return;
-    node.material.opacity = THREE.MathUtils.lerp(node.material.opacity, 1, Math.min(1, delta * 9));
-    node.material.depthWrite = true;
+    const target = withinShelf ? .12 : 1;
+    node.material.opacity = THREE.MathUtils.lerp(node.material.opacity, target, Math.min(1, delta * 9));
+    node.material.depthWrite = node.material.opacity > .98;
+    if (withinShelf || node.material.opacity < .7) cameraSoftClouds.add(node);
   });
 }
 
@@ -2010,7 +1881,7 @@ function animate(now) {
       yaw: cameraYaw,
       landmarks,
       passage: PASSAGE,
-      terrace: firstLevelHeight,
+      terrace: Math.max(2, scrollShelfHeight - 2.2),
       near: nearLandmarkId,
     });
   }
