@@ -30,7 +30,6 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;op
 #s-loading.out{visibility:hidden}
 .ld-slips{display:none}
 .ld-pct{font:300 clamp(2.8rem,7vw,5.4rem)/1 'Cormorant Garamond',serif;letter-spacing:-.03em;color:#ede8de}
-.ld-txt{order:-1;margin:0 0 20px;font:600 .66rem/1 'IBM Plex Mono',monospace;letter-spacing:.24em;text-transform:uppercase;color:rgba(226,231,238,.48);animation:none}
 .ld-gold-line{display:none}
 
 /* Shared shell */

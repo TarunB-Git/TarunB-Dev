@@ -3,6 +3,12 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
 
+const directoryCss = fs.readFileSync(new URL('../static/css/directory.css', import.meta.url), 'utf8');
+const navigationCss = fs.readFileSync(new URL('../static/css/cloud-navigation.css', import.meta.url), 'utf8');
+assert.ok(directoryCss.includes('body[data-shell-mode="directory"] .directory-dock{'));
+assert.ok(directoryCss.includes('top:2px;bottom:auto'), 'Window switcher stays in the OS bar');
+assert.ok(navigationCss.includes('#mini .is-mini-privacy'), 'Cloud recruiter privacy control is integrated into its navbar');
+
 function install(context, source, names) {
   for (const name of names) {
     const start = source.indexOf(`function ${name}(`);

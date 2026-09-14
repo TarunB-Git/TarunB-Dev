@@ -54,8 +54,6 @@ body[data-home-view="directory"] #privacy-settings{top:3px!important;right:92px!
 .ld-directory,.ld-world,.ld-slips,.ld-pct,.ld-gold-line{display:none!important}
 .ld-mode-icon{position:relative;display:grid;place-items:center;width:132px;height:102px;margin-bottom:16px}
 .ld-mode-icon img{display:block;width:112px;height:88px;object-fit:contain;filter:drop-shadow(0 12px 24px rgba(0,0,0,.36))}
-.ld-mode-icon .ld-txt{position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);display:block;margin:0;padding:0;color:#fff;font:600 .6rem/1 'IBM Plex Mono',monospace;letter-spacing:.04em;text-shadow:0 1px 4px rgba(0,0,0,.8);text-transform:uppercase}
-body[data-shell-mode="world"] .ld-mode-icon .ld-txt{top:64%}
 .ld-meter{width:min(220px,58vw);height:1px;margin:0;background:rgba(255,255,255,.14)}
 .ld-meter span{display:block;width:var(--load,0%);height:100%;background:#e7e1d6;box-shadow:none;transition:width .12s linear}
 
@@ -77,8 +75,6 @@ body[data-shell-mode="world"] .ld-mode-icon .ld-txt{top:64%}
 .directory-overview{position:absolute;inset:31px 0 0;z-index:30;display:flex;align-items:center;justify-content:center;gap:32px;padding:50px;background:rgba(34,17,46,.78);backdrop-filter:blur(22px)}.directory-overview[hidden]{display:none}.overview-workspace{width:min(380px,38vw);height:240px;border:2px solid rgba(255,255,255,.35);border-radius:12px;background:linear-gradient(145deg,#ece9e5 0 14%,#fff 14%);box-shadow:0 25px 55px rgba(0,0,0,.34);color:#29252c;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;padding:25px;cursor:pointer}.overview-workspace span{font-weight:700}.overview-workspace i{font-size:.7rem;color:#69636b}
 .directory-calendar{position:absolute;z-index:40;right:12px;top:38px;width:310px;padding:20px;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(34,29,38,.97);box-shadow:0 24px 70px rgba(0,0,0,.5)}.directory-calendar[hidden]{display:none}.directory-calendar header{display:flex;justify-content:space-between;align-items:start;margin-bottom:16px}.directory-calendar header strong{text-transform:capitalize}.directory-calendar header span{font-size:.58rem;color:#b7afb9}.directory-calendar #calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center;font-size:.68rem}.directory-calendar #calendar-grid b{color:#a99fac;font-size:.56rem}.directory-calendar #calendar-grid span{padding:6px;border-radius:50%}.directory-calendar #calendar-grid .today{background:#e95420;color:#fff}.directory-calendar>a{display:block;margin-top:17px;padding:9px;border-radius:5px;background:#5e2750;color:#fff;text-align:center;text-decoration:none;font-size:.7rem}
 .experience-switch{position:fixed;z-index:980;left:50%;top:4px;display:flex;padding:2px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(22,18,27,.82);transform:translateX(-50%);backdrop-filter:blur(12px)}.experience-switch button{padding:5px 11px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.55);font:600 .56rem 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.07em;cursor:pointer}.experience-switch button[aria-pressed="true"]{background:#f0ede7;color:#262229}
-.experience-switch.mode-confirmation{animation:modeConfirmed 1s ease-in-out 5}.experience-switch.mode-confirmation button[aria-pressed="true"]{box-shadow:0 0 0 2px rgba(255,255,255,.75),0 0 24px rgba(207,190,255,.78)}
-@keyframes modeConfirmed{50%{transform:translateX(-50%) scale(1.08);border-color:rgba(255,255,255,.68)}}
 .landscape-prompt{display:none;position:fixed;z-index:990;left:12px;right:12px;top:72px;bottom:auto;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid rgba(255,255,255,.18);border-radius:8px;background:rgba(24,19,29,.92);color:#fff;font-size:.7rem;pointer-events:none}.landscape-prompt button{border:0;background:none;color:#fff;font-size:1rem;pointer-events:auto}
 .directory-app-window{display:contents}.directory-app-window>.app-titlebar{display:none}.directory-app-content{display:contents}
 body[data-shell-mode="directory"] .directory-app-window.active{--win-x:0px;--win-y:0px;position:fixed;z-index:55;left:50%;top:calc(50% + 16px);width:min(1180px,calc(100vw - 84px));height:min(820px,calc(100vh - 94px));min-width:650px;min-height:440px;display:flex;flex-direction:column;overflow:hidden;resize:both;transform:translate(calc(-50% + var(--win-x)),calc(-50% + var(--win-y)));border:1px solid rgba(255,255,255,.2);border-radius:11px;background:#090a0d;box-shadow:0 38px 100px rgba(14,4,20,.68)}body[data-shell-mode="directory"] .directory-app-window.active>.app-titlebar{display:flex}body[data-shell-mode="directory"] .directory-app-window.active .directory-app-content{position:relative;display:block;flex:1;min-height:0;overflow:hidden;container-type:size}body[data-shell-mode="directory"] .directory-app-window.active .ps{position:absolute;inset:0}body[data-shell-mode="directory"] .directory-app-window.active .ps .site-home{display:none!important}body[data-shell-mode="directory"] .directory-app-window.is-minimized{display:none}body[data-shell-mode="directory"] .directory-app-window.is-maximized{inset:31px 0 0!important;width:100%!important;height:calc(100% - 31px)!important;min-width:0;min-height:0;transform:none!important;border:0;border-radius:0;resize:none}
@@ -94,6 +90,46 @@ body[data-shell-mode="world"] #s-world .world-home{display:none}
 @media(max-width:720px){body[data-shell-mode="world"]>#experience-switch{top:4px!important}}
 .directory-document-window article>button{margin-top:18px;padding:9px 13px;border:0;border-radius:5px;background:#5e2750;color:#fff;font:600 .7rem Inter,sans-serif;cursor:pointer}
 
+/* Running applications live in the OS bar, never on top of a window. */
+body[data-shell-mode="directory"] .directory-dock{
+  position:absolute;z-index:9015;left:96px;top:2px;bottom:auto;
+  display:flex;gap:4px;padding:0;border:0;border-radius:0;
+  background:transparent;transform:none;backdrop-filter:none;
+}
+body[data-shell-mode="directory"] .directory-dock-item{
+  left:auto;top:auto;bottom:auto;width:28px;height:27px;min-height:27px;padding:0;
+  border-radius:6px;font-size:.76rem;
+}
+body[data-shell-mode="directory"] .directory-dock-item small{display:none}
+body[data-shell-mode="directory"] .directory-dock-item::after{
+  left:7px;right:7px;top:auto;bottom:1px;width:auto;height:2px;
+}
+body[data-shell-mode="directory"] #privacy-settings{
+  left:196px!important;right:auto!important;top:3px!important;bottom:auto!important;
+  min-height:25px;padding:5px 8px!important;
+}
+body[data-shell-mode="directory"] #mini{width:min(900px,calc(100vw - 40px))}
+
+@media(pointer:coarse){
+  body[data-shell-mode="directory"] #mini{top:39px;width:min(900px,calc(100vw - 32px))}
+  body[data-shell-mode="directory"] #mini .mini-bar{flex-wrap:nowrap;gap:6px;padding:7px 10px}
+  body[data-shell-mode="directory"] #mini .mini-role,body[data-shell-mode="directory"] #mini .mini-sep{display:block}
+  body[data-shell-mode="directory"] #mini .mini-role{max-width:172px;font-size:7px;white-space:nowrap}
+}
+
+@media(max-width:720px){
+  body[data-shell-mode="directory"] .directory-dock{left:84px;top:3px;transform:none}
+  body[data-shell-mode="directory"] #privacy-settings{left:auto!important;right:7px!important;top:35px!important}
+  body[data-shell-mode="directory"] #mini{top:64px;width:calc(100vw - 12px)}
+  body[data-shell-mode="directory"] #mini .mini-bar{overflow-x:auto;scrollbar-width:none}
+  body[data-shell-mode="directory"] #mini .mini-bar::-webkit-scrollbar{display:none}
+  body[data-shell-mode="directory"] .directory-window,
+  body[data-shell-mode="directory"] .directory-document-window,
+  body[data-shell-mode="directory"] .directory-app-window.active{
+    top:64px!important;height:calc(100% - 64px)!important;
+  }
+}
+
 /* Directory paths open as large, genuine windows. They remain movable,
    resizable, minimizable, maximizable, and independently closable. */
 body[data-shell-mode="directory"] .directory-app-window.active .directory-app-content,body[data-shell-mode="directory"] .directory-app-window.active .ps,body[data-shell-mode="directory"] .rec-scroll,body[data-shell-mode="directory"] .view-wrap,body[data-shell-mode="directory"] .pers-wrap{width:100%;height:100%;max-width:none}
@@ -107,8 +143,8 @@ body[data-shell-mode="directory"] .directory-app-window.active .ps{transition:no
 .directory-dock{position:absolute;z-index:20;left:8px;top:50%;display:grid;gap:8px;padding:7px 5px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(35,24,42,.78);transform:translateY(-50%);backdrop-filter:blur(12px)}.directory-dock .directory-dock-item{left:auto;top:auto;bottom:auto}.directory-dock button:hover,.directory-dock button:focus-visible{background:rgba(255,255,255,.14);outline:1px solid rgba(255,255,255,.35)}.directory-dock .directory-dock-item::after{left:-6px;top:18px}
 .overview-world{background:linear-gradient(150deg,#171a2d,#343454 58%,#7c6585);color:#fff}.overview-world i{color:rgba(255,255,255,.62)}
 
-/* A plain loader: one label and one progress line. */
-#s-loading{align-items:center;justify-content:center}.ld-directory,.ld-world,.ld-slips,.ld-pct,.ld-gold-line{display:none!important}.ld-txt{order:0;margin:0 0 14px;font-size:.6rem;letter-spacing:.16em;color:rgba(238,235,229,.7)}.ld-meter{width:min(220px,58vw);height:1px;margin:0;background:rgba(255,255,255,.14)}.ld-meter span{background:#e7e1d6;box-shadow:none;transition:width .12s linear}
+/* A silent loader: one mode icon and one progress line. */
+#s-loading{align-items:center;justify-content:center}.ld-directory,.ld-world,.ld-slips,.ld-pct,.ld-gold-line{display:none!important}.ld-meter{width:min(220px,58vw);height:1px;margin:0;background:rgba(255,255,255,.14)}.ld-meter span{background:#e7e1d6;box-shadow:none;transition:width .12s linear}
 @media(max-width:720px){
   .directory-resize-handle{display:none}
   .experience-switch{top:3px}

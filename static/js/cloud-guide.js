@@ -8,15 +8,24 @@ export function createCloudGuide(root) {
   panel.setAttribute('aria-label', 'Next destination');
   root.append(panel);
   const hud = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, .1, 20);
-  camera.position.set(0, 0, 7);
+  const camera = new THREE.PerspectiveCamera(32, 1, .1, 20);
+  camera.position.set(0, 0, 7.2);
   hud.add(new THREE.HemisphereLight(0xffefbe, 0x67431a, 2.5));
   const light = new THREE.DirectionalLight(0xffffff, 3); light.position.set(-2, 3, 5); hud.add(light);
   const arrow = new THREE.Group();
   const material = new THREE.MeshStandardMaterial({ color: 0xf0b52d, metalness: .35, roughness: .28 });
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, 1.45, 6), material);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(.7, .9, 4), material);
-  shaft.position.y = -.25; tip.position.y = .92; arrow.add(shaft, tip); hud.add(arrow);
+  const edge = new THREE.MeshStandardMaterial({ color: 0x6f4715, metalness: .22, roughness: .52 });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.16, .21, 1.55, 8), material);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(.68, 1.0, 5), material);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(.24, .075, 6, 12), edge);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(.38, .5, 4), edge);
+  shaft.position.y = -.22;
+  tip.position.y = 1.05;
+  collar.position.y = .53; collar.rotation.x = Math.PI / 2;
+  tail.position.y = -1.06; tail.rotation.z = Math.PI;
+  arrow.add(shaft, tip, collar, tail);
+  arrow.rotation.z = -.08;
+  hud.add(arrow);
   let visible = false;
   return {
     update({ player, yaw, landmarks, passage, terrace, near }) {
@@ -38,7 +47,11 @@ export function createCloudGuide(root) {
       if (!target) return;
       const dx = target.x - player.x, dz = target.z - player.z;
       const bearing = Math.atan2(-dx, -dz) - yaw;
-      const direction = new THREE.Vector3(-Math.sin(bearing), Math.cos(bearing), THREE.MathUtils.clamp((target.y - player.y) / 20, -.7, .7)).normalize();
+      const direction = new THREE.Vector3(
+        -Math.sin(bearing),
+        Math.cos(bearing),
+        THREE.MathUtils.clamp((target.y - player.y) / 12, -.88, .88),
+      ).normalize();
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
       panel.querySelector('strong').textContent = record ? NAMES[record.id] : 'Central opening';
       panel.querySelector('p').textContent = record
@@ -48,6 +61,9 @@ export function createCloudGuide(root) {
     render(renderer) {
       if (!visible) return;
       const rect = panel.querySelector('.guide-arrow').getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      camera.aspect = rect.width / rect.height;
+      camera.updateProjectionMatrix();
       const viewport = new THREE.Vector4(); renderer.getViewport(viewport);
       const oldAuto = renderer.autoClear;
       renderer.autoClear = false; renderer.clearDepth();

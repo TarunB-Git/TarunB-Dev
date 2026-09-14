@@ -39,28 +39,9 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
 
 <!-- ══ LOADING ══ -->
 <div id="s-loading">
-  <div class="ld-mode-icon"><img id="ld-mode-img" src="/static/assets/ui/device.png" alt=""><span class="ld-txt" id="ld-txt">Device</span></div>
+  <div class="ld-mode-icon"><img id="ld-mode-img" src="/static/assets/ui/device.png" alt=""></div>
   <div class="ld-meter" aria-hidden="true"><span></span></div>
 </div>
-
-<!-- First visit: choose the tone before choosing a destination. -->
-<section class="entry-choice" id="entry-choice" role="dialog" aria-modal="true" aria-labelledby="entry-choice-title" hidden>
-  <div class="entry-choice-clouds" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-  <div class="entry-choice-core">
-    <p id="entry-choice-title">Choose</p>
-    <div class="entry-choice-orbit">
-      <button class="entry-choice-option entry-choice-world" type="button" data-entry-mode="world">
-        <img src="/static/assets/ui/cloud.png" alt="" width="24" height="24">
-        <strong>Cloud</strong>
-      </button>
-      <button class="entry-choice-option entry-choice-directory" type="button" data-entry-mode="directory">
-        <img src="/static/assets/ui/device.png" alt="" width="24" height="24">
-        <strong>Device</strong>
-      </button>
-    </div>
-    <small class="entry-choice-time" id="entry-choice-time">Device opens in 10</small>
-  </div>
-</section>
 
 <!-- ══ DIRECTORY — default landing ══ -->
 <main class="stage directory-stage" id="s-directory" aria-label="Portfolio Device">

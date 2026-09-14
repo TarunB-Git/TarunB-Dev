@@ -489,21 +489,35 @@ let tiltX = 0, tiltY = 0, tiltXt = 0, tiltYt = 0;
 let isFlipping = false, tiltRaf = null, showingBack = false;
 let foldActive = false, foldAnimating = false;
 let shellSwitchHome = null;
+let privacyHome = null;
 
 function setShellSwitchInMini(embedded) {
   const shellSwitch = $('experience-switch');
+  const privacy = $('privacy-settings');
   const miniBar = document.querySelector('#mini .mini-bar');
   if (!shellSwitch || !miniBar) return;
   if (!shellSwitchHome) {
     shellSwitchHome = document.createComment('experience switch home');
     shellSwitch.before(shellSwitchHome);
   }
+  if (privacy && !privacyHome) {
+    privacyHome = document.createComment('privacy control home');
+    privacy.before(privacyHome);
+  }
   if (embedded && document.body.dataset.shellMode === 'world') {
     miniBar.insertBefore(shellSwitch, miniBar.querySelector('.mini-acts'));
     shellSwitch.classList.add('is-mini-switch');
+    if (privacy) {
+      miniBar.insertBefore(privacy, miniBar.querySelector('.mini-acts'));
+      privacy.classList.add('is-mini-privacy');
+    }
   } else if (shellSwitchHome.parentNode) {
     shellSwitchHome.parentNode.insertBefore(shellSwitch, shellSwitchHome.nextSibling);
     shellSwitch.classList.remove('is-mini-switch');
+    if (privacy && privacyHome?.parentNode) {
+      privacyHome.parentNode.insertBefore(privacy, privacyHome.nextSibling);
+      privacy.classList.remove('is-mini-privacy');
+    }
   }
 }
 

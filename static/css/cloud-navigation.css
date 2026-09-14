@@ -111,10 +111,49 @@ body[data-shell-mode="world"][data-path] #privacy-settings{left:18px!important;r
 @keyframes abilityBurst{from{opacity:1;transform:scale(.3) rotate(-12deg)}to{opacity:0;transform:scale(1.4) rotate(8deg)}}
 @keyframes abilitySlash{0%{opacity:0;transform:translate(-50%,-50%) scaleX(.02)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scaleX(1)}}
 @keyframes abilityName{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-/* Static supplied icons, one short clearing transition, no continuous orbit. */
-.entry-choice-clouds{filter:none}.entry-choice-clouds i{box-shadow:none;transition-duration:.7s}
-.entry-choice-orbit{animation:none;border:0;width:360px}.entry-choice-orbit::before{display:none}
-.entry-choice-option{animation:none;backdrop-filter:none;box-shadow:none;background:none!important;border:0;width:160px;height:160px;padding:0}
-.entry-choice-option img{width:140px;height:140px}.entry-choice-option strong{position:absolute;top:60%;left:50%;transform:translate(-50%,-50%);margin:0;font:500 13px Inter,sans-serif}
-.entry-choice-core>p{top:8%}.ld-txt{animation:none!important}
 @media(prefers-reduced-motion:reduce){#speed-unlock::before,#speed-unlock::after{display:none}#speed-unlock strong,#speed-unlock span{animation:none}}
+
+/* Final HUD pass: reserve independent lanes for navigation, guidance and
+   controls. The introductory copy quietly leaves once the world is familiar. */
+#s-world #w-prompt{transition:opacity .65s ease,transform .65s ease}
+#s-world.world-copy-hidden #w-prompt{opacity:0;transform:translateY(-8px);pointer-events:none}
+#cloud-guide .guide-arrow{filter:drop-shadow(0 8px 9px rgba(0,0,0,.55))}
+#cloud-guide canvas{overflow:visible}
+
+/* When the recruiter card becomes a Cloud navbar, the mode and privacy
+   controls become part of that bar instead of forming competing overlays. */
+#mini .is-mini-privacy{
+  position:static!important;inset:auto!important;display:inline-flex!important;
+  align-items:center;min-height:27px;margin:0;padding:5px 8px!important;
+  border:1px solid var(--bdr)!important;border-radius:6px!important;
+  background:rgba(255,255,255,.055)!important;color:var(--txt)!important;
+  font:600 7px/1 'IBM Plex Mono',monospace!important;text-transform:uppercase;
+}
+
+@media(pointer:coarse){
+  #cloud-guide{top:70px;right:12px;width:146px}
+  #cloud-guide .guide-arrow{width:36px;height:36px;flex-basis:36px}
+  #cloud-guide>div:last-child{padding:6px 7px}
+  #cloud-guide strong{font-size:9px}#cloud-guide p{font-size:8px}
+  #cloud-utilities{left:50%;right:auto;bottom:13px;transform:translateX(-50%);gap:5px}
+  #cloud-utilities button{min-height:30px;padding:5px 8px;font-size:9px}
+  #mini{width:min(900px,calc(100vw - 28px))}
+  #mini .mini-bar{flex-wrap:nowrap;gap:6px;padding:7px 10px 9px}
+  #mini .mini-role,#mini .mini-sep{display:block}
+  #mini .mini-role{max-width:172px;font-size:7px;white-space:nowrap}
+  #mini .mini-name{font-size:16px}
+  #mini .mini-acts{gap:4px;align-items:center}
+  #mini .mab{padding:4px 7px;font-size:7px}
+  #mini .profile-link{width:25px;height:25px}
+}
+
+@media(max-width:760px){
+  #cloud-guide{top:112px;right:9px;width:126px}
+  body.graybox-active #w-prompt{width:calc(100% - 154px)}
+  #cloud-utilities{left:50%;right:auto;bottom:calc(9px + env(safe-area-inset-bottom));transform:translateX(-50%)}
+  body[data-shell-mode="world"][data-path] #privacy-settings:not(.is-mini-privacy){left:10px!important;right:auto!important;bottom:10px!important}
+  #mini{width:calc(100vw - 12px)}
+  #mini .mini-bar{padding:6px 7px 8px;overflow-x:auto;scrollbar-width:none}
+  #mini .mini-bar::-webkit-scrollbar{display:none}
+  #mini .mini-role{max-width:126px}
+}

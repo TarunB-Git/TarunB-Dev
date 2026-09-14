@@ -43,10 +43,10 @@ const HOLD_TO_FLY_DELAY = 0.48;
 let maxFlightHeight = 48;
 let upperCloudVisual;
 let cloudChamber;
-let authoredCloudScenery;
 let guide;
 let boardObject;
-let boardPosts = [];
+let boardRefreshTimer = 0;
+let worldCopyTimer = 0;
 let navTick = 0;
 let scrollShelfHeight = 30;
 const cloudSolids = [];
@@ -215,7 +215,7 @@ export function initWorld(options = {}) {
   }
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0d0a1d);
+  scene.background = new THREE.Color(0x171329);
   scene.fog = new THREE.Fog(0x171329, 78, 138);
   camera = new THREE.PerspectiveCamera(innerWidth < 620 ? 68 : 58, innerWidth / Math.max(innerHeight, 1), 0.1, 190);
   camera.position.set(0, 5, 15);
@@ -686,7 +686,10 @@ function useCharacter(kind) {
   playerVisual = useClassic ? classicPlayerVisual : riggedPlayerVisual;
   if (!useClassic) setPlayerAction('Idle', true);
   const button = $('graybox-character');
-  if (button) button.textContent = `Character · ${useClassic ? 'Classic' : 'Mage'}`;
+  if (button) {
+    button.textContent = useClassic ? 'Classic' : 'Mage';
+    button.setAttribute('aria-label', `Character: ${useClassic ? 'Classic' : 'Mage'}. Activate to switch.`);
+  }
   try { localStorage.setItem(CHARACTER_KEY, useClassic ? 'classic' : 'mage'); } catch { /* preference is optional */ }
 }
 
@@ -1004,18 +1007,23 @@ function resolveLandmarkCollisions(x, z, playerY) {
 }
 
 function addShipCloudScenery() {
-  // Geometry here is collision only. The supplied ship-cloud mesh is installed
-  // as the visible floor, dividing cloud, ceiling and enclosing horizon once
-  // the GLB has loaded.
-  const material = new THREE.MeshBasicMaterial({
-    side: THREE.DoubleSide, colorWrite: false, depthWrite: false,
-    transparent: true, opacity: 0,
+  // One welded surface is both the visible world and the collision boundary.
+  // Loading the ship asset later only transfers its relief into this surface;
+  // it never introduces a second set of walls, floors or scenery clones.
+  const detail = createCloudSurfaceTexture(); detail.repeat.set(3, 3);
+  const bump = detail.clone(); bump.colorSpace = THREE.NoColorSpace; bump.needsUpdate = true;
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x82768f, emissive: 0x171326, emissiveIntensity: .24,
+    map: detail, bumpMap: bump, bumpScale: .12, roughness: 1,
+    metalness: 0, flatShading: true, side: THREE.DoubleSide,
   });
   const geometry = createCloudGeometry();
   cloudChamber = new THREE.Mesh(geometry.shell, material);
-  cloudChamber.name = 'Invisible continuous cloud enclosure';
+  cloudChamber.name = 'Ship cloud · welded floor, walls and ceiling';
+  cloudChamber.receiveShadow = true;
   upperCloudVisual = new THREE.Mesh(geometry.terrace, material.clone());
-  upperCloudVisual.name = 'Invisible middle cloud floor';
+  upperCloudVisual.name = 'Ship cloud · continuous middle floor';
+  upperCloudVisual.receiveShadow = true;
   const group = new THREE.Group();
   group.add(cloudChamber, upperCloudVisual);
   scene.remove(scene.userData.cloudEnvelope);
@@ -1028,7 +1036,6 @@ function addShipCloudScenery() {
   scrollShelfHeight = terraceTopAt(SPAWN.x, SPAWN.z) + 1.8;
   applyLandmarkLayout();
   if (player) player.position.y = groundHeightAt(player.position.x, player.position.z, player.position.y + .45);
-  createWorldBoard();
 }
 
 function terraceTopAt(x, z) {
@@ -1040,37 +1047,84 @@ function chamberCeilingAt(x, z) {
 }
 
 function createWorldBoard() {
-  const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 512;
-  const context = canvas.getContext('2d');
-  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+  scene.remove(boardObject);
   boardObject = new THREE.Group();
-  boardObject.position.set(SPAWN.x + 5, terraceTopAt(SPAWN.x + 5, SPAWN.z) + 2.2, SPAWN.z);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 3), new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }));
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(4.7, 3.2, .18), new THREE.MeshStandardMaterial({ color: 0x6c5140, roughness: .9 }));
-  frame.position.z = -.12; boardObject.add(frame, face);
-  boardObject.rotation.y = -.35; scene.add(boardObject);
-  const draw = () => {
-    context.fillStyle = '#e5d4ae'; context.fillRect(0, 0, 768, 512);
-    context.fillStyle = '#4c392c'; context.font = '30px serif'; context.fillText('THE READING TERRACE', 42, 64);
-    context.fillStyle = '#80674b'; context.fillRect(42, 87, 684, 2);
-    const posts = boardPosts.length ? boardPosts : [{ title: 'New writing will appear here when published.' }];
-    posts.slice(0, 3).forEach((post, i) => {
-      context.font = '27px serif'; context.fillStyle = '#4c392c';
-      const words = String(post.title).split(' '); let line = '', lines = 0;
+  boardObject.name = 'Cloud notice boards';
+  const posters = new Map();
+  const createPoster = ({ key, title, x, y, z, rotation = 0, accent = '#80674b' }) => {
+    const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 448;
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const poster = new THREE.Group();
+    const faceGeometry = new THREE.PlaneGeometry(4.6, 2.68);
+    const faceMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide });
+    const face = new THREE.Mesh(faceGeometry, faceMaterial);
+    face.position.z = .012;
+    const reverseFace = new THREE.Mesh(faceGeometry, faceMaterial.clone());
+    reverseFace.position.z = -.012;
+    reverseFace.rotation.y = Math.PI;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(4.82, 2.9, .16), new THREE.MeshStandardMaterial({ color: 0x5d4434, roughness: .92 }));
+    frame.position.z = -.11;
+    poster.add(frame, face, reverseFace);
+    poster.position.set(x, y, z);
+    poster.rotation.y = rotation;
+    poster.userData = { key, title, accent, canvas, texture, items: [] };
+    boardObject.add(poster); posters.set(key, poster);
+  };
+  createPoster({ key: 'personal', title: 'FROM THE SCROLL', x: 5.5, y: terraceTopAt(5.5, 34) + 2.25, z: 34, rotation: -.25 });
+  createPoster({ key: 'recruiter', title: 'FROM THE FLOCK', x: -12, y: lowerFloorAt(-12, 9) + 2.15, z: 9, rotation: .48, accent: '#89723d' });
+  createPoster({ key: 'posts-a', title: 'RECENT WRITING', x: 18, y: lowerFloorAt(18, 25) + 2.15, z: 25, rotation: -.8, accent: '#71586f' });
+  createPoster({ key: 'posts-b', title: 'NEW FIELD NOTES', x: 13, y: terraceTopAt(13, -27) + 2.15, z: -27, rotation: 2.55, accent: '#71586f' });
+  scene.add(boardObject);
+
+  const draw = poster => {
+    const { canvas, texture, title, accent, items } = poster.userData;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#e5d4ae'; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#4c392c'; context.font = '600 29px serif'; context.fillText(title, 42, 58);
+    context.fillStyle = accent; context.fillRect(42, 79, 684, 3);
+    const rows = items.length ? items : [{ title: 'More notes will appear here.' }];
+    rows.slice(0, 3).forEach((item, i) => {
+      context.font = '25px serif'; context.fillStyle = '#4c392c';
+      const words = String(item.title || item).split(' '); let line = '', lines = 0;
       for (const word of words) {
-        if (context.measureText(line + word).width > 650) { context.fillText(line, 48, 146 + i * 106 + lines * 30); line = ''; lines++; if (lines === 2) break; }
+        if (context.measureText(`${line}${word}`).width > 650) {
+          context.fillText(line, 48, 128 + i * 96 + lines * 27); line = ''; lines++;
+          if (lines === 2) break;
+        }
         line += word + ' ';
       }
-      if (lines < 2) context.fillText(line, 48, 146 + i * 106 + lines * 30);
+      if (lines < 2) context.fillText(line, 48, 128 + i * 96 + lines * 27);
+      if (item.category || item.excerpt) {
+        context.font = '16px sans-serif'; context.fillStyle = '#7a654e';
+        context.fillText(String(item.category || item.excerpt).slice(0, 72), 48, 164 + i * 96);
+      }
     });
-    context.font = '19px sans-serif'; context.fillText('Approach the scroll to open the library', 48, 472);
     texture.needsUpdate = true;
   };
-  draw();
-  fetch('/api/v1/posts?tag=personal&limit=3', { credentials: 'omit' })
-    .then(response => response.ok ? response.json() : { items: [] })
-    .then(data => { boardPosts = Array.isArray(data.items) ? data.items.slice(0, 3) : []; draw(); })
-    .catch(() => { /* Keep a useful empty board offline. */ });
+  posters.forEach(draw);
+
+  const flattenEvents = payload => (payload?.periods || []).flatMap(period => period.events || []);
+  const shuffled = values => [...values].sort(() => Math.random() - .5);
+  const refresh = async () => {
+    try {
+      const responses = await Promise.all([
+        fetch('/api/v1/timelines/personal', { credentials: 'omit' }),
+        fetch('/api/v1/timelines/recruiter', { credentials: 'omit' }),
+        fetch('/api/v1/posts?sort=new&limit=6', { credentials: 'omit' }),
+      ]);
+      const [personal, recruiter, posts] = await Promise.all(responses.map(response => response.ok ? response.json() : {}));
+      posters.get('personal').userData.items = shuffled(flattenEvents(personal)).slice(0, 3);
+      posters.get('recruiter').userData.items = shuffled(flattenEvents(recruiter)).slice(0, 3);
+      const recent = Array.isArray(posts) ? posts : (Array.isArray(posts.items) ? posts.items : []);
+      posters.get('posts-a').userData.items = recent.slice(0, 3);
+      posters.get('posts-b').userData.items = recent.slice(3, 6);
+      posters.forEach(draw);
+    } catch { /* The boards keep their quiet offline state. */ }
+  };
+  refresh();
+  clearInterval(boardRefreshTimer);
+  boardRefreshTimer = window.setInterval(refresh, 60_000);
 }
 function restoreAuthoredCloudRelief(gltf) {
   const cloud = gltf.scene.getObjectByName('Cloud_Poly_Poly_0');
@@ -1099,86 +1153,29 @@ function restoreAuthoredCloudRelief(gltf) {
 
   // The geometry regression runs this sampling half without a browser scene.
   if (typeof scene === 'undefined' || !scene) return;
-  cloud.removeFromParent();
-  fitModel(cloud, 20);
   const detail = createCloudSurfaceTexture(); detail.repeat.set(3, 3);
-  let authoredMaterial;
-  cloud.traverse(node => {
-    if (!node.isMesh) return;
-    node.material = new THREE.MeshStandardMaterial({
-      color: 0x82768f, emissive: 0x171326, emissiveIntensity: .24,
-      map: node.geometry.attributes.uv ? detail : null,
-      bumpMap: node.geometry.attributes.uv ? detail : null,
-      bumpScale: .09, roughness: 1, metalness: 0,
-      flatShading: true, side: THREE.DoubleSide,
-    });
-    node.castShadow = false;
-    node.receiveShadow = true;
-    node.userData.cloudScenery = true;
-    authoredMaterial ||= node.material;
+  const bump = detail.clone(); bump.colorSpace = THREE.NoColorSpace; bump.needsUpdate = true;
+  const authoredMaterial = new THREE.MeshStandardMaterial({
+    color: 0x82768f, emissive: 0x171326, emissiveIntensity: .24,
+    map: detail, bumpMap: bump, bumpScale: .12, roughness: 1,
+    metalness: 0, flatShading: true, side: THREE.DoubleSide,
   });
-
-  scene.remove(authoredCloudScenery);
-  authoredCloudScenery = new THREE.Group();
-  authoredCloudScenery.name = 'One continuous world made from the ship cloud';
-  const addCloud = (name, scale, position, rotation = [0, 0, 0]) => {
-    const copy = cloneSkeleton(cloud);
-    copy.name = name;
-    copy.scale.multiply(new THREE.Vector3(...scale));
-    copy.position.set(...position);
-    copy.rotation.set(...rotation);
-    authoredCloudScenery.add(copy);
-    return copy;
-  };
-
-  // The same authored facets are used on every visible boundary. The lower
-  // surface is deliberately broad and vertically compressed: recognizable
-  // cloud relief without the unwalkable spikes of the literal asset.
-  const floor = addCloud('Ship cloud · lower world', [7.6, 1.35, 8.7], [0, 0, -5], [0, -.08, 0]);
-  authoredCloudScenery.updateMatrixWorld(true);
-  const floorProbe = new THREE.Raycaster(
-    new THREE.Vector3(SPAWN.x, 80, SPAWN.z), new THREE.Vector3(0, -1, 0), 0, 160,
-  ).intersectObject(floor, true)[0];
-  const floorBounds = new THREE.Box3().setFromObject(floor);
-  floor.position.y += lowerFloorAt(SPAWN.x, SPAWN.z) - .1 - (floorProbe?.point.y ?? floorBounds.max.y);
-  cloudFloorVisual = floor;
-
-  // The sampled authored relief is also the exact, continuous middle floor.
-  // Keeping its annular topology guarantees the passage is visually open—not
-  // merely an invisible hole hidden behind overlapping decorative clouds.
+  cloudChamber.material.dispose();
+  cloudChamber.material = authoredMaterial;
+  cloudChamber.name = 'Ship cloud · welded floor, walls and ceiling';
+  cloudChamber.receiveShadow = true;
+  cloudFloorVisual = cloudChamber;
   upperCloudVisual.material.dispose();
   upperCloudVisual.material = authoredMaterial.clone();
-  upperCloudVisual.material.map = detail;
-  upperCloudVisual.material.bumpMap = detail;
-  upperCloudVisual.material.needsUpdate = true;
   upperCloudVisual.name = 'Ship cloud · continuous middle floor';
   upperCloudVisual.receiveShadow = true;
-
-  // A single authored cloud vocabulary wraps the horizon. Adjacent banks
-  // overlap, removing the differently coloured wall seams of earlier builds.
-  for (let i = 0; i < 12; i++) {
-    const angle = i / 12 * Math.PI * 2;
-    const x = Math.cos(angle) * 47;
-    const z = Math.sin(angle) * 67;
-    const wall = addCloud(`Ship cloud · enclosing bank ${i + 1}`, [3.2, 2.5, 3.4], [x, 33, z]);
-    const inward = new THREE.Vector3(-x / 48, 0, -z / 68).normalize();
-    wall.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), inward);
-    wall.rotateY(angle);
-  }
-
-  const ceiling = addCloud('Ship cloud · upper bound', [7.8, 2.7, 8.9], [0, 0, -5], [Math.PI, -.08, 0]);
-  authoredCloudScenery.updateMatrixWorld(true);
-  const ceilingBounds = new THREE.Box3().setFromObject(ceiling);
-  ceiling.position.y += 67 - ceilingBounds.min.y;
-
-  authoredCloudScenery.traverse(node => {
-    if (!node.isMesh) return;
-    node.frustumCulled = false;
-  });
-  scene.add(authoredCloudScenery);
-  scene.userData.cloudScenery = authoredCloudScenery;
+  scene.background.copy(authoredMaterial.emissive);
   applyLandmarkLayout();
-  if (boardObject) boardObject.position.y = terraceTopAt(boardObject.position.x, boardObject.position.z) + 2.2;
+  if (player) {
+    const floor = groundHeightAt(player.position.x, player.position.z, player.position.y + .45);
+    if (player.position.y < floor) player.position.y = floor;
+  }
+  createWorldBoard();
 }
 
 async function loadShipLandmark() {
@@ -1948,6 +1945,13 @@ export function resumeWorld() {
   if (!ready || !renderer || running) return;
   running = true;
   window.__worldRunning = true;
+  const stage = $('s-world');
+  if (stage && !stage.classList.contains('world-copy-hidden') && !worldCopyTimer) {
+    worldCopyTimer = window.setTimeout(() => {
+      stage.classList.add('world-copy-hidden');
+      worldCopyTimer = 0;
+    }, 60_000);
+  }
   lastFrameAt = performance.now();
   frame = requestAnimationFrame(animate);
 }

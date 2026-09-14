@@ -7,6 +7,13 @@ import { CLOUD_SPACE, createCloudGeometry, lowerFloorAt, upperCeilingAt, inPassa
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 const source = fs.readFileSync(new URL('../static/js/graybox.js', import.meta.url), 'utf8');
+const guideSource = fs.readFileSync(new URL('../static/js/cloud-guide.js', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../static/index.html', import.meta.url), 'utf8');
+assert.ok(!html.includes('id="entry-choice"'), 'Obsolete first-visit chooser is removed');
+assert.ok(!html.includes('id="ld-txt"'), 'Loading screen has no text label');
+assert.ok(source.includes("cloudChamber.name = 'Ship cloud · welded floor, walls and ceiling'"));
+assert.ok(source.includes('new THREE.Mesh(faceGeometry, faceMaterial.clone())'), 'World posters have a readable reverse face');
+assert.ok(guideSource.includes('new THREE.PerspectiveCamera'), 'Compass arrow retains real 3D perspective');
 const geometry = createCloudGeometry();
 const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
 const shell = new THREE.Mesh(geometry.shell, material);

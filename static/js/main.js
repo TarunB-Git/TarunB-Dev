@@ -37,17 +37,6 @@ const leaveFns = {
 };
 
 const SHELL_KEY = 'portfolio-shell-mode-v1';
-const ENTRY_CHOICE_KEY = 'portfolio-entry-choice-v1';
-function shouldOfferEntryChoice() {
-  const url = new URL(location.href);
-  const pathname = url.pathname.replace(/\/+$/, '') || '/';
-  if (pathname !== '/' || url.searchParams.has('shell') || url.searchParams.has('view')) return false;
-  try {
-    return !localStorage.getItem(ENTRY_CHOICE_KEY) && !localStorage.getItem(SHELL_KEY);
-  } catch {
-    return true;
-  }
-}
 function savedShellMode() {
   const requested = new URL(location.href).searchParams.get('shell');
   if (requested === 'world' || requested === 'directory') return requested;
@@ -60,12 +49,7 @@ let shellMode = savedShellMode();
 let homeView = shellMode;
 let transitionVersion = 0;
 let initialRouteApplied = false;
-let entryChoicePending = shouldOfferEntryChoice();
-let entryChoiceTimer = 0;
-let entryChoiceTicker = 0;
-let modeHighlightTimer = 0;
 document.body.dataset.shellMode = shellMode;
-if ($('ld-txt')) $('ld-txt').textContent = shellMode === 'world' ? 'Cloud' : 'Device';
 if ($('ld-mode-img')) $('ld-mode-img').src = shellMode === 'world' ? '/static/assets/ui/cloud.png' : '/static/assets/ui/device.png';
 
 /* ── Loader ────────────────────────────────────────────── */
@@ -88,59 +72,9 @@ function hideLoader() {
   const loader = $('s-loading');
   loader?.classList.add('out');
   setTimeout(() => { if (loader) loader.hidden = true; }, REDUCED_MOTION.matches ? 0 : (shellMode === 'directory' ? 180 : 520));
-  if (entryChoicePending) {
-    const choice = $('entry-choice');
-    if (choice) {
-      choice.hidden = false;
-      requestAnimationFrame(() => {
-        choice.classList.add('is-open');
-        choice.querySelector('[data-entry-mode="world"]')?.focus({ preventScroll: true });
-      });
-      let remaining = 10;
-      const time = $('entry-choice-time');
-      if (time) time.textContent = `Device opens in ${remaining}`;
-      entryChoiceTicker = window.setInterval(() => {
-        remaining -= 1;
-        if (time) time.textContent = `Device opens in ${Math.max(remaining, 0)}`;
-      }, 1000);
-      entryChoiceTimer = window.setTimeout(() => commitEntryChoice('directory'), 10_000);
-    }
-  }
 }
 
 const loaderTicker = window.setInterval(tickLoader, 80);
-
-function highlightModeSwitch() {
-  const control = $('experience-switch');
-  if (!control) return;
-  clearTimeout(modeHighlightTimer);
-  control.classList.remove('mode-confirmation');
-  void control.offsetWidth;
-  control.classList.add('mode-confirmation');
-  modeHighlightTimer = window.setTimeout(() => control.classList.remove('mode-confirmation'), 5000);
-}
-
-function commitEntryChoice(mode) {
-  if (!entryChoicePending) return;
-  if (mode !== 'world' && mode !== 'directory') return;
-  entryChoicePending = false;
-  clearTimeout(entryChoiceTimer);
-  clearInterval(entryChoiceTicker);
-  try { localStorage.setItem(ENTRY_CHOICE_KEY, mode); } catch { /* first-visit memory is optional */ }
-  const choice = $('entry-choice');
-  choice?.setAttribute('data-selected', mode);
-  setShellMode(mode, { history: 'replace', keepPath: false });
-  highlightModeSwitch();
-  setTimeout(() => {
-    choice?.classList.remove('is-open');
-    if (choice) choice.hidden = true;
-  }, REDUCED_MOTION.matches ? 0 : 720);
-}
-
-$('entry-choice')?.addEventListener('click', event => {
-  const option = event.target.closest('[data-entry-mode]');
-  if (option) commitEntryChoice(option.dataset.entryMode);
-});
 
 /* ── Route model ───────────────────────────────────────── */
 function currentRoute() {

@@ -27,7 +27,9 @@ const ripple = (x, z) => Math.sin(x * .43) * Math.cos(z * .36) + .5 * Math.sin(x
 
 export function createCloudGeometry() {
   // A welded sphere is the enclosure: no imported seams or missing triangles.
-  const shell = new THREE.SphereGeometry(1, 88, 56);
+  // Broad triangles preserve the authored low-poly cloud character. Higher
+  // tessellation made the same palette read as a smooth plastic room.
+  const shell = new THREE.SphereGeometry(1, 64, 40);
   const p = shell.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const ux = p.getX(i), uy = p.getY(i), uz = p.getZ(i);
@@ -39,7 +41,7 @@ export function createCloudGeometry() {
 
   // A complete annular floor, with top, underside and a closed opening rim.
   const positions = [], uvs = [], indices = [];
-  const segments = 128, rings = 28;
+  const segments = 96, rings = 22;
   for (let side = 0; side < 2; side++) {
     for (let ring = 0; ring <= rings; ring++) {
       const t = ring / rings;

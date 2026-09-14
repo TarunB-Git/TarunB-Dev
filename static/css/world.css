@@ -5,7 +5,6 @@
 .ld-slip{width:22px;border-radius:3px 3px 4px 4px;background:linear-gradient(110deg,#7a9820 0%,#c2d048 50%,#72901a 100%);box-shadow:inset -2px 0 4px rgba(0,0,0,.2),0 3px 10px rgba(0,0,0,.5);position:relative;overflow:hidden;transition:height .6s cubic-bezier(.25,.46,.45,.94)}
 .ld-slip::after{content:'';position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(255,215,0,0),rgba(255,215,0,.9));height:var(--fill,0%);transition:height .3s ease;box-shadow:0 -6px 20px rgba(255,215,0,.4)}
 .ld-pct{font-family:'Cinzel Decorative',serif;font-size:1.8rem;color:rgba(212,175,55,.55);letter-spacing:.12em}
-.ld-txt{font-family:'Cinzel',serif;font-size:.66rem;color:rgba(212,175,55,.32);letter-spacing:.45em;margin-top:10px;animation:blink 1.6s ease infinite}
 .ld-gold-line{width:180px;height:2px;background:linear-gradient(90deg,transparent,rgba(255,215,0,.35),transparent);border-radius:1px;margin-top:20px}
 @keyframes blink{0%,100%{opacity:.2}55%{opacity:.75}}
 
