@@ -29,7 +29,7 @@ test('cloud geometry loads and movement renders without runtime errors', async (
   await page.route('**/js/graybox.js', async route => {
     const response = await route.fetch();
     const source = await response.text();
-    const probe = '\nwindow.cloudTestProbe = () => ({ shelf: scrollShelfHeight, scroll: SCROLL_POS.y, maxHeight: maxFlightHeight, solids: cloudSolids.length, cameraClear: cloudClearance(player.position.clone().add(new THREE.Vector3(0,1.2,0)),camera.position,.1) });';
+    const probe = '\nwindow.cloudTestProbe = () => ({ shelf: scrollShelfHeight, cloudSurface: upperSurfaceHeightAt(SCROLL_POS.x, SCROLL_POS.z), scroll: SCROLL_POS.y, ship: SHIP_POS.y, moon: landmarks.get("friend")?.object.position.toArray(), maxHeight: maxFlightHeight, solids: cloudSolids.length, cameraClear: cloudClearance(player.position.clone().add(new THREE.Vector3(0,1.2,0)),camera.position,.1), blockedBelow: resolveVerticalTravel(20,32,12,0), passageOpen: resolveVerticalTravel(20,32,0,0) });';
     await route.fulfill({ response, body: source.replace('if (usesSoftwareRenderer(renderer.getContext()))', 'if (false)').replaceAll('failIfMajorPerformanceCaveat: true', 'failIfMajorPerformanceCaveat: false') + probe });
   });
   await page.goto('/?shell=world');
@@ -38,8 +38,12 @@ test('cloud geometry loads and movement renders without runtime errors', async (
   await page.waitForTimeout(3500);
   const geometry = await page.evaluate(() => window.cloudTestProbe());
   expect(geometry.solids).toBeGreaterThanOrEqual(2);
-  expect(geometry.scroll).toBeGreaterThan(10);
-  expect(geometry.scroll).toBeLessThan(17);
+  expect(geometry.scroll).toBeGreaterThan(geometry.cloudSurface);
+  expect(geometry.scroll).toBeLessThan(geometry.cloudSurface + 3);
+  expect(geometry.ship).toBeGreaterThan(geometry.cloudSurface);
+  expect(geometry.moon[1]).toBeGreaterThan(geometry.ship);
+  expect(geometry.blockedBelow.surface).toBe('cloud-underside');
+  expect(geometry.passageOpen.y).toBe(32);
   expect(geometry.maxHeight).toBeGreaterThan(geometry.scroll);
   await page.screenshot({ path: '/tmp/cloud-collision-start.png' });
   await page.keyboard.down('w');

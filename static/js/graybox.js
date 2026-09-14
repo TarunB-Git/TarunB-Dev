@@ -10,12 +10,20 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const coarsePointer = matchMedia('(pointer: coarse)');
 const PLATFORM = { halfX: 26, halfZ: 48, top: 0.5 };
 const PLAYER_RADIUS = 0.42;
+const PLAYER_HEIGHT = 1.9;
+const CLOUD_CEILING_CENTER_Y = 17;
+const CLOUD_CEILING_RADIUS_Y = 42;
+const CLOUD_FLOOR_RADIUS_Y = 30;
+const UPPER_TERRACE_Y = 27;
+const UPPER_TERRACE_THICKNESS = 2.4;
+const CAMERA_PITCH_MIN = -0.92;
+const CAMERA_PITCH_MAX = 0.74;
 const OBJECT_POS = new THREE.Vector3(-8, PLATFORM.top, -27);
-const SHIP_POS = new THREE.Vector3(-13, 8.5, -32);
-const MOON_POS = new THREE.Vector3(20, 19, -50);
-const MOON_FAR_POS = new THREE.Vector3(20, 19, -50);
-const MOON_LAND_POS = new THREE.Vector3(20, 8, -44);
-const SCROLL_POS = new THREE.Vector3(16, 1.7, -29);
+const SHIP_POS = new THREE.Vector3(-13, 39, -32);
+const MOON_POS = new THREE.Vector3(12, 52, 0);
+const MOON_FAR_POS = new THREE.Vector3(12, 52, 0);
+const MOON_LAND_POS = new THREE.Vector3(12, 6, -20);
+const SCROLL_POS = new THREE.Vector3(16, UPPER_TERRACE_Y + .3, -29);
 const BIRD_POS = new THREE.Vector3(-17, 11, -11);
 const BIRD_CHASE_POINTS = Array.from({ length: 4 }, () => new THREE.Vector3());
 const LANDMARK_META = {
@@ -33,7 +41,7 @@ const LANDMARK_ANCHORS = {
 const MOON_REQUIREMENTS = ['viewer', 'personal', 'recruiter'];
 const SPAWN = new THREE.Vector3(0, PLATFORM.top, 38);
 const PASSAGE = { x: 0, z: 0, radius: 8 };
-const TOP_CEILING_Y = 45;
+const TOP_CEILING_Y = CLOUD_CEILING_CENTER_Y + CLOUD_CEILING_RADIUS_Y;
 const FOCUS_DURATION = 2.4;
 const FOCUS_IN = 0.42;
 const FOCUS_OUT = 0.72;
@@ -44,7 +52,11 @@ let upperCloudVisual;
 let guide;
 let navTick = 0;
 let scrollBoard;
-let scrollShelfHeight = 30;
+let adminBoard;
+let scrollShelfHeight = UPPER_TERRACE_Y + 2.2;
+let shipBoundsY = { min: -17, max: 17 };
+let scrollBoundsY = { min: -.2, max: .2 };
+let moonBoundsY = { min: -5.25, max: 5.25 };
 const cloudSolids = [];
 const SPEED_TAP_WINDOW = 330;
 const SPEED_BOOST_DURATION = 10;
@@ -125,7 +137,6 @@ const visitedGlow = new THREE.Color(0x222b39);
 const groundRaycaster = new THREE.Raycaster();
 const groundProbeOrigin = new THREE.Vector3();
 const groundProbeDirection = new THREE.Vector3(0, -1, 0);
-const cameraSoftClouds = new Set();
 
 function loadVisitedPaths() {
   try {
@@ -147,12 +158,26 @@ function loadBirdChaseStep() {
 function applyLandmarkLayout() {
   const portrait = innerWidth < 620;
   OBJECT_POS.set(portrait ? -6 : -8, PLATFORM.top, portrait ? -24 : -27);
-  SHIP_POS.set(portrait ? -2 : 0, portrait ? 7.5 : 8.5, portrait ? -27 : -32);
-  MOON_FAR_POS.set(portrait ? 12 : 20, portrait ? 18 : 19, portrait ? -44 : -50);
-  MOON_LAND_POS.set(portrait ? 12 : 20, portrait ? 8 : 8, portrait ? -39 : -44);
+  SHIP_POS.x = portrait ? -2 : 0;
+  SHIP_POS.z = portrait ? -27 : -32;
+  const shipCloudY = upperSurfaceHeightAt(SHIP_POS.x, SHIP_POS.z);
+  SHIP_POS.y = Math.min(
+    ceilingHeightAt(SHIP_POS.x, SHIP_POS.z) - .35 - shipBoundsY.max,
+    shipCloudY - 1.5 - shipBoundsY.min,
+  );
+  MOON_FAR_POS.x = portrait ? 9 : 12;
+  MOON_FAR_POS.z = 0;
+  MOON_FAR_POS.y = ceilingHeightAt(MOON_FAR_POS.x, MOON_FAR_POS.z) - .12 - moonBoundsY.max;
+  MOON_LAND_POS.x = portrait ? 9 : 12;
+  MOON_LAND_POS.z = portrait ? -17 : -20;
+  MOON_LAND_POS.y = lowerGroundHeightAt(MOON_LAND_POS.x, MOON_LAND_POS.z) + .08 - moonBoundsY.min;
   if (moonState !== 'falling') MOON_POS.copy(moonState === 'landed' ? MOON_LAND_POS : MOON_FAR_POS);
-  // Keep the scroll over the starting point, lowered to the ship's level.
-  SCROLL_POS.set(SPAWN.x, SHIP_POS.y + 1.05, SPAWN.z);
+  // The scroll and its notice board live on the same upper cloud as the ship.
+  SCROLL_POS.x = portrait ? -10 : -14;
+  SCROLL_POS.z = portrait ? 22 : 25;
+  const scrollCloudY = upperSurfaceHeightAt(SCROLL_POS.x, SCROLL_POS.z);
+  SCROLL_POS.y = scrollCloudY + .1 - scrollBoundsY.min;
+  scrollShelfHeight = scrollCloudY + 2.2;
   BIRD_CHASE_POINTS[0].set(portrait ? -2 : -3, portrait ? 8 : 9, portrait ? 15 : 13);
   BIRD_CHASE_POINTS[1].set(portrait ? 6 : 8, portrait ? 7.5 : 8.5, portrait ? 43 : 45);
   BIRD_CHASE_POINTS[2].set(portrait ? -9 : -12, portrait ? 9 : 10, portrait ? 5 : 2);
@@ -172,7 +197,30 @@ function applyLandmarkLayout() {
     record.baseY = position.y;
     record.focus.copy(position);
   });
-  if (scrollBoard) scrollBoard.position.set(SCROLL_POS.x + 5.8, SHIP_POS.y + 2.2, SCROLL_POS.z - 1.5);
+  if (scrollBoard) {
+    const boardX = SCROLL_POS.x + 5.8;
+    const boardZ = SCROLL_POS.z - 1.5;
+    scrollBoard.position.set(boardX, upperSurfaceHeightAt(boardX, boardZ, scrollCloudY - .08) + 1.62, boardZ);
+  }
+}
+
+function inUpperPassage(x, z, padding = 0) {
+  const dx = x - PASSAGE.x;
+  const dz = z - PASSAGE.z;
+  const angle = Math.atan2(dz, dx);
+  return Math.hypot(dx, dz) < passageRadiusAt(angle) - padding;
+}
+
+function passageRadiusAt(angle) {
+  return PASSAGE.radius + Math.sin(angle * 3 + .4) * 1.15 +
+    Math.sin(angle * 7 - .7) * .62 + Math.cos(angle * 11 + .25) * .28;
+}
+
+function ceilingHeightAt(x, z) {
+  // Matches the enclosing ellipsoid built in buildCloudEnvelope(). Keeping
+  // this as gameplay geometry makes the visible crown a real ceiling.
+  const radial = (x / 42) ** 2 + ((z + 6) / 68) ** 2;
+  return CLOUD_CEILING_CENTER_Y + CLOUD_CEILING_RADIUS_Y * Math.sqrt(Math.max(0, 1 - radial));
 }
 
 export function canUseWebGL() {
@@ -244,6 +292,7 @@ export function initWorld(options = {}) {
   buildAtmosphere();
   buildPlatform();
   buildPlayer();
+  createAdminBoard();
   guide = createCloudGuide($('world-ui'));
   buildTestObject();
   loadShipLandmark();
@@ -437,8 +486,8 @@ function buildCloudEnvelope() {
   const colors = [];
   const floorTone = new THREE.Color(0x655c7b);
   const horizonTone = new THREE.Color(0x927c91);
-  const upperTone = new THREE.Color(0x29233f);
-  const crownTone = new THREE.Color(0x141126);
+  const upperTone = new THREE.Color(0x777084);
+  const crownTone = new THREE.Color(0xaaa1b2);
 
   for (let index = 0; index < positions.count; index += 1) {
     let x = positions.getX(index);
@@ -454,10 +503,14 @@ function buildCloudEnvelope() {
     x *= radius;
     z *= radius;
     y = y * (1 + cloudNoise * .45) + verticalWave;
+    const colorY = y;
+    // Raise only the upper dome. The lower enclosure, ground silhouette, and
+    // horizon remain at their established positions.
+    if (y > 0) y *= CLOUD_CEILING_RADIUS_Y / CLOUD_FLOOR_RADIUS_Y;
     positions.setXYZ(index, x, y, z);
 
-    const vertical = THREE.MathUtils.clamp((y + 1) * .5, 0, 1);
-    const horizonBand = Math.exp(-Math.pow((y + .35 + Math.sin(angle * 6) * .04) / .27, 2));
+    const vertical = THREE.MathUtils.clamp((colorY + 1) * .5, 0, 1);
+    const horizonBand = Math.exp(-Math.pow((colorY + .35 + Math.sin(angle * 6) * .04) / .27, 2));
     const base = vertical < .48
       ? floorTone.clone().lerp(horizonTone, vertical / .48)
       : upperTone.clone().lerp(crownTone, (vertical - .48) / .52);
@@ -477,8 +530,8 @@ function buildCloudEnvelope() {
     side: THREE.BackSide,
   });
   const shell = new THREE.Mesh(shellGeometry, shellMaterial);
-  shell.position.set(0, 17, -6);
-  shell.scale.set(42, 30, 68);
+  shell.position.set(0, CLOUD_CEILING_CENTER_Y, -6);
+  shell.scale.set(42, CLOUD_FLOOR_RADIUS_Y, 68);
   shell.receiveShadow = true;
   shell.name = 'Continuous enclosing cloud';
   scene.add(shell);
@@ -538,7 +591,7 @@ function buildPlatform() {
 
 }
 
-function groundHeightAt(x, z, probeY = 100) {
+function lowerGroundHeightAt(x, z, probeY = 100) {
   if (!cloudFloorVisual) return PLATFORM.top;
   // The imported clouds have inward-facing normals. Probe each whole shelf
   // from above and select its top, rather than treating an underside as land.
@@ -547,15 +600,41 @@ function groundHeightAt(x, z, probeY = 100) {
   groundRaycaster.near = 0;
   groundRaycaster.far = 250;
   cloudFloorVisual.updateWorldMatrix(true, false);
-  const surfaces = [cloudFloorVisual];
-  if (upperCloudVisual && probeY < 100) surfaces.push(upperCloudVisual);
-  const hit = surfaces.map(surface => groundRaycaster.intersectObject(surface, true)[0])
+  const hit = [cloudFloorVisual].map(surface => groundRaycaster.intersectObject(surface, true)[0])
     .filter(candidate => candidate && candidate.point.y <= probeY)
     .sort((a, b) => b.point.y - a.point.y)[0];
   /* A missing hit is a genuine break in the cloud. Keep a low rescue floor so
      the player falls into the pocket instead of gliding across empty space. */
   if (!hit) return PLATFORM.top - 8;
   return hit.point.y + .08;
+}
+
+function groundHeightAt(x, z, probeY = 100) {
+  const lower = lowerGroundHeightAt(x, z, probeY);
+  const cloud = upperCloudBandAt(x, z);
+  if (!cloud || probeY < cloud.top - .2) return lower;
+  return Math.max(lower, cloud.top + .08);
+}
+
+function upperCloudBandAt(x, z) {
+  if (!upperCloudVisual || inUpperPassage(x, z, PLAYER_RADIUS * .35)) return null;
+  groundProbeOrigin.set(x, 150, z);
+  groundRaycaster.set(groundProbeOrigin, groundProbeDirection);
+  groundRaycaster.near = 0;
+  groundRaycaster.far = 250;
+  upperCloudVisual.updateWorldMatrix(true, false);
+  const hits = groundRaycaster.intersectObject(upperCloudVisual, true);
+  if (!hits.length) return null;
+  const top = hits[0].point.y;
+  const lowestHit = hits[hits.length - 1].point.y;
+  return {
+    top,
+    bottom: top - lowestHit > .6 ? lowestHit : top - UPPER_TERRACE_THICKNESS,
+  };
+}
+
+function upperSurfaceHeightAt(x, z, fallback = UPPER_TERRACE_Y) {
+  return (upperCloudBandAt(x, z)?.top ?? fallback) + .08;
 }
 
 // Sweep against the rendered cloud triangles, not oversized proxy boxes.
@@ -574,8 +653,19 @@ function cloudClearance(start, end, padding = .3, objects = cloudSolids) {
 }
 
 function moveThroughClouds(x, z) {
-  // Clouds are one-way landing surfaces, not stone ceilings or walls. During
-  // flight, only the arena bounds and solid landmarks constrain movement.
+  // While the character is inside the visible cloud's thickness, its torn rim
+  // keeps the ascent/descent route inside the authored central opening.
+  const proposedCloud = upperCloudBandAt(x, z);
+  const overlapsCloud = proposedCloud && player.position.y < proposedCloud.top + .2 &&
+    player.position.y + PLAYER_HEIGHT > proposedCloud.bottom;
+  if (overlapsCloud && inUpperPassage(player.position.x, player.position.z) && !inUpperPassage(x, z, PLAYER_RADIUS)) {
+    const dx = x - PASSAGE.x;
+    const dz = z - PASSAGE.z;
+    const length = Math.hypot(dx, dz) || 1;
+    const radius = passageRadiusAt(Math.atan2(dz, dx)) - PLAYER_RADIUS;
+    x = PASSAGE.x + dx / length * radius;
+    z = PASSAGE.z + dz / length * radius;
+  }
   if (flightMode || !grounded) return { x, z };
   // Walking still respects steep terrain, with enough allowance for small
   // ridges. Never sweep the decorative overhead cloud against the character.
@@ -590,6 +680,25 @@ function moveThroughClouds(x, z) {
     next[axis] += (value - next[axis]) * fraction;
   }
   return next;
+}
+
+function resolveVerticalTravel(previousY, requestedY, x, z) {
+  const ceiling = Math.min(maxFlightHeight, ceilingHeightAt(x, z) - PLAYER_HEIGHT - .2);
+  let y = Math.min(requestedY, ceiling);
+  let surface = requestedY > ceiling ? 'ceiling' : null;
+  const cloud = upperCloudBandAt(x, z);
+  if (!cloud) return { y, surface };
+
+  const cloudTop = cloud.top + .08;
+  const highestBelow = cloud.bottom - PLAYER_HEIGHT - .08;
+  if (previousY <= highestBelow + .08 && y > highestBelow) {
+    y = highestBelow;
+    surface = 'cloud-underside';
+  } else if (previousY >= cloudTop && y < cloudTop) {
+    y = cloudTop;
+    surface = 'cloud-top';
+  }
+  return { y, surface };
 }
 
 function createCloudSurfaceTexture() {
@@ -777,6 +886,16 @@ function fitModel(object, targetSize) {
   return object;
 }
 
+function verticalBoundsAtOrigin(object) {
+  const previous = object.position.clone();
+  object.position.set(0, 0, 0);
+  object.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object);
+  object.position.copy(previous);
+  object.updateMatrixWorld(true);
+  return { min: box.min.y, max: box.max.y };
+}
+
 function trimShipUnderslungStick(object) {
   object.traverse(node => {
     if (!node.isMesh || !node.geometry?.attributes?.position) return;
@@ -838,7 +957,7 @@ function prepareMaterials(object, minimumEmissive = 0.2) {
 function registerLandmark({
   id, object, focus, baseY, bob = 0.08, interactionRadius = 4.8,
   colliderRadius = 0, colliderMinY = -Infinity, colliderMaxY = Infinity,
-  companionScale = 0.1, companionSource = object, mixers = [], birds = [], locked = false,
+  companionScale = 0.1, companionSource = object, mixers = [], birds = [], locked = false, level = 'lower',
 }) {
   const meta = LANDMARK_META[id];
   object.name = `${meta.title} · ${meta.label}`;
@@ -858,6 +977,7 @@ function registerLandmark({
     colliderMinY,
     colliderMaxY,
     locked,
+    level,
     baseScale: object.scale.clone(),
     materials: [],
     companionScale,
@@ -957,11 +1077,18 @@ function updateMoonFall(delta) {
   const duration = reducedMotion.matches ? 0.2 : 4.2;
   moonFallElapsed = Math.min(duration, moonFallElapsed + delta);
   const raw = moonFallElapsed / duration;
-  const lateral = raw * raw * (3 - 2 * raw);
-  const fall = raw * raw;
-  record.object.position.x = THREE.MathUtils.lerp(MOON_FAR_POS.x, MOON_LAND_POS.x, lateral);
-  record.object.position.z = THREE.MathUtils.lerp(MOON_FAR_POS.z, MOON_LAND_POS.z, lateral);
-  record.object.position.y = THREE.MathUtils.lerp(MOON_FAR_POS.y, MOON_LAND_POS.y, fall);
+  const aboveOpening = new THREE.Vector3(PASSAGE.x, UPPER_TERRACE_Y + 5.2, PASSAGE.z);
+  const belowOpening = new THREE.Vector3(PASSAGE.x, UPPER_TERRACE_Y - UPPER_TERRACE_THICKNESS - 3.2, PASSAGE.z);
+  if (raw < .36) {
+    const phase = THREE.MathUtils.smoothstep(raw / .36, 0, 1);
+    record.object.position.lerpVectors(MOON_FAR_POS, aboveOpening, phase);
+  } else if (raw < .66) {
+    const phase = THREE.MathUtils.smoothstep((raw - .36) / .3, 0, 1);
+    record.object.position.lerpVectors(aboveOpening, belowOpening, phase);
+  } else {
+    const phase = THREE.MathUtils.smoothstep((raw - .66) / .34, 0, 1);
+    record.object.position.lerpVectors(belowOpening, MOON_LAND_POS, phase);
+  }
   record.baseY = record.object.position.y;
   record.focus.copy(record.object.position);
   landmarkFocus.copy(record.object.position);
@@ -973,14 +1100,10 @@ function updateMoonFall(delta) {
   record.baseY = MOON_LAND_POS.y;
   record.focus.copy(MOON_LAND_POS);
   record.locked = false;
+  record.level = 'lower';
   if (moonHalo) moonHalo.visible = false;
-  /* Do not spawn the miniature during the landing shot: it read as a second
-     moon. The companion is created when the player returns to the world. */
-  markVisited(record, false);
   $('s-world')?.setAttribute('data-moon-state', moonState);
-  setStatus('Moon found. Opening Story…');
-  clearTimeout(pathTimer);
-  pathTimer = setTimeout(() => opts.onPathChosen?.('friend'), reducedMotion.matches ? 80 : 520);
+  setStatus('The moon has landed on the lower cloud. Approach it to enter Story.');
 }
 
 function clampToCloudIsland(x, z) {
@@ -1006,7 +1129,7 @@ function resolveLandmarkCollisions(x, z, playerY) {
   let nextX = x;
   let nextZ = z;
   landmarks.forEach(record => {
-    if (!record.colliderRadius || record.locked) return;
+    if (!record.colliderRadius) return;
     const minY = record.object.position.y + record.colliderMinY;
     const maxY = record.object.position.y + record.colliderMaxY;
     if (playerY + 1.8 < minY || playerY > maxY) return;
@@ -1024,6 +1147,37 @@ function resolveLandmarkCollisions(x, z, playerY) {
     nextZ = record.object.position.z + unitZ * minimum;
   });
   return { x: nextX, z: nextZ };
+}
+
+function carvePassageThroughCloud(object) {
+  object.updateWorldMatrix(true, true);
+  object.traverse(node => {
+    const position = node.geometry?.attributes?.position;
+    if (!node.isMesh || !position) return;
+    const source = node.geometry.index
+      ? Array.from(node.geometry.index.array)
+      : Array.from({ length: position.count }, (_, index) => index);
+    const kept = [];
+    const point = new THREE.Vector3();
+    for (let index = 0; index < source.length; index += 3) {
+      let centerX = 0;
+      let centerZ = 0;
+      for (let corner = 0; corner < 3; corner += 1) {
+        point.fromBufferAttribute(position, source[index + corner]).applyMatrix4(node.matrixWorld);
+        centerX += point.x;
+        centerZ += point.z;
+      }
+      const dx = centerX / 3 - PASSAGE.x;
+      const dz = centerZ / 3 - PASSAGE.z;
+      const throughOpening = Math.hypot(dx, dz) < passageRadiusAt(Math.atan2(dz, dx)) + .8;
+      if (!throughOpening) kept.push(source[index], source[index + 1], source[index + 2]);
+    }
+    const geometry = node.geometry.clone();
+    geometry.setIndex(kept);
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    node.geometry = geometry;
+  });
 }
 
 function addShipCloudScenery(gltf) {
@@ -1052,7 +1206,6 @@ function addShipCloudScenery(gltf) {
       metalness: 0,
       flatShading: true,
       side: THREE.DoubleSide,
-      transparent: true,
     });
     node.material = material;
     node.castShadow = false;
@@ -1068,14 +1221,10 @@ function addShipCloudScenery(gltf) {
   ));
   cloud.rotation.set(Math.PI, -.08, 0);
   cloud.position.set(0, innerWidth < 620 ? 21 : 24, -16);
-  // Keep the authored silhouette intact; ascent is no longer gated by a hole.
   group.add(cloud);
   upperCloudVisual = cloud;
 
-  /* Use the very same cloud mesh and material language below the player.
-     Its highest ridge sits just under the simple collision plane, giving the
-     arena the asset's real silhouette without turning decorative triangles
-     into unreliable level geometry. */
+  /* Use the very same cloud mesh and material language below the player. */
   const floorCloud = cloneSkeleton(source);
   styleCloud(floorCloud);
   floorCloud.scale.multiply(new THREE.Vector3(
@@ -1129,11 +1278,10 @@ function addShipCloudScenery(gltf) {
   scene.add(group);
   scene.userData.cloudInterior = group;
   group.updateMatrixWorld(true);
+  carvePassageThroughCloud(cloud);
+  group.updateMatrixWorld(true);
   cloudSolids.length = 0;
   group.traverse(node => { if (node.isMesh) cloudSolids.push(node); });
-  const shelf = new THREE.Raycaster(new THREE.Vector3(SPAWN.x, 150, SPAWN.z), groundProbeDirection, 0, 250).intersectObject(cloud, true)[0];
-  const upperBounds = new THREE.Box3().setFromObject(cloud);
-  scrollShelfHeight = (shelf?.point.y ?? upperBounds.max.y) + 2.2;
   maxFlightHeight = TOP_CEILING_Y - 1.9;
   const envelope = scene.userData.cloudEnvelope;
   if (envelope) cloudSolids.push(envelope);
@@ -1144,6 +1292,48 @@ function addShipCloudScenery(gltf) {
   createScrollBoard();
 }
 
+function createAdminBoard() {
+  scene.remove(adminBoard);
+  adminBoard = new THREE.Group();
+  adminBoard.name = 'Hidden owner access board';
+  const wood = new THREE.MeshStandardMaterial({ color: 0x4a3024, roughness: .96 });
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(5.8, 2.8, .28), wood);
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 300;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#d7c18b';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = '#80633f';
+  context.lineWidth = 12;
+  context.strokeRect(14, 14, canvas.width - 28, canvas.height - 28);
+  context.fillStyle = '#3d2d24';
+  context.textAlign = 'center';
+  context.font = '700 48px serif';
+  context.fillText("OWNER'S HATCH", canvas.width / 2, 120);
+  context.font = '28px sans-serif';
+  context.fillText('CLICK FOR ADMIN LOGIN', canvas.width / 2, 190);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(5.45, 2.45),
+    new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
+  );
+  sign.position.z = .151;
+  sign.userData.adminPortal = true;
+  panel.userData.adminPortal = true;
+  const posts = new THREE.Mesh(new THREE.BoxGeometry(.2, 3.8, .2), wood);
+  posts.position.set(0, -2.5, -.08);
+  adminBoard.add(panel, sign, posts);
+  adminBoard.position.set(0, PLATFORM.top - 7.1, 34);
+  adminBoard.rotation.y = 0;
+  adminBoard.visible = false;
+  adminBoard.traverse(node => { if (node.isMesh) node.userData.adminPortal = true; });
+  scene.add(adminBoard);
+}
+
 function createScrollBoard() {
   scene.remove(scrollBoard);
   scrollBoard = new THREE.Group();
@@ -1152,23 +1342,44 @@ function createScrollBoard() {
   canvas.width = 768; canvas.height = 448;
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = Math.min(8, renderer?.capabilities?.getMaxAnisotropy?.() || 1);
   const faceGeometry = new THREE.PlaneGeometry(4.8, 2.8);
-  const faceMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide });
+  const faceMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide, toneMapped: false });
   const front = new THREE.Mesh(faceGeometry, faceMaterial);
-  front.position.z = .09;
-  const back = new THREE.Mesh(faceGeometry, faceMaterial.clone());
-  back.position.z = -.09; back.rotation.y = Math.PI;
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(5.04, 3.04, .18),
-    new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: .94 }),
-  );
-  scrollBoard.add(frame, front, back);
-  scrollBoard.position.set(SCROLL_POS.x + 5.8, SHIP_POS.y + 2.2, SCROLL_POS.z - 1.5);
+  front.position.z = .141;
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: .94 });
+  const back = new THREE.Mesh(new THREE.BoxGeometry(4.86, 2.86, .26), wood);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(5.18, .18, .34), wood);
+  const bottom = top.clone();
+  const left = new THREE.Mesh(new THREE.BoxGeometry(.18, 3.08, .34), wood);
+  const right = left.clone();
+  top.position.y = 1.49;
+  bottom.position.y = -1.49;
+  left.position.x = -2.49;
+  right.position.x = 2.49;
+  scrollBoard.add(back, front, top, bottom, left, right);
+  const boardX = SCROLL_POS.x + 5.8;
+  const boardZ = SCROLL_POS.z - 1.5;
+  scrollBoard.position.set(boardX, upperSurfaceHeightAt(boardX, boardZ, scrollShelfHeight - 2.28) + 1.62, boardZ);
   scrollBoard.rotation.y = -.35;
   scene.add(scrollBoard);
 
+  const fitLine = (context, text, maxWidth) => {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (context.measureText(candidate).width <= maxWidth) line = candidate;
+      else return `${line || word.slice(0, 28)}…`;
+    }
+    return line;
+  };
   const draw = items => {
     const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#e6d4aa'; context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = '#4d392a'; context.font = '600 30px serif';
     context.fillText('NOTES BY THE SCROLL', 42, 58);
@@ -1176,10 +1387,13 @@ function createScrollBoard() {
     const rows = items.length ? items : [{ title: 'More notes will appear here.' }];
     rows.slice(0, 3).forEach((item, index) => {
       context.fillStyle = '#4d392a'; context.font = '25px serif';
-      const title = String(item.title || item).slice(0, 78);
-      context.fillText(title, 48, 132 + index * 96, 650);
+      const title = fitLine(context, item.title || item, 650);
+      context.fillText(title, 48, 132 + index * 96);
       context.fillStyle = '#765f48'; context.font = '16px sans-serif';
-      context.fillText(String(item.category || item.excerpt || '').slice(0, 78), 48, 164 + index * 96, 650);
+      const detail = Array.isArray(item.tags) && item.tags.length
+        ? item.tags.join(' · ')
+        : String(item.category || item.excerpt || '').replace(/[#*_>`]/g, ' ');
+      context.fillText(fitLine(context, detail, 650), 48, 164 + index * 96);
     });
     texture.needsUpdate = true;
   };
@@ -1219,8 +1433,10 @@ async function loadShipLandmark() {
     scene.remove(testObject);
     const holder = new THREE.Group();
     holder.add(ship);
-    holder.position.copy(SHIP_POS);
     holder.rotation.y = 0.34;
+    shipBoundsY = verticalBoundsAtOrigin(holder);
+    applyLandmarkLayout();
+    holder.position.copy(SHIP_POS);
     scene.add(holder);
     testObject = holder;
     testCore = holder;
@@ -1229,12 +1445,13 @@ async function loadShipLandmark() {
       object: holder,
       focus: SHIP_POS,
       baseY: SHIP_POS.y,
-      bob: 0.08,
+      bob: 0,
       interactionRadius: 8.4,
       colliderRadius: 1.35,
       colliderMinY: -8,
       colliderMaxY: 18,
       companionScale: 0.04,
+      level: 'upper',
     });
 
     const lamp = new THREE.PointLight(0xffd1a8, 18, 20, 2);
@@ -1261,21 +1478,24 @@ async function loadMoonLandmark() {
 
     const moonObject = new THREE.Group();
     moonObject.add(moon);
-    moonObject.position.copy(MOON_POS);
     moonObject.rotation.y = -0.28;
+    moonBoundsY = verticalBoundsAtOrigin(moonObject);
+    applyLandmarkLayout();
+    moonObject.position.copy(MOON_POS);
     scene.add(moonObject);
     registerLandmark({
       id: 'friend',
       object: moonObject,
       focus: MOON_POS,
       baseY: MOON_POS.y,
-      bob: 0.12,
+      bob: 0,
       interactionRadius: 7.2,
       colliderRadius: 6.7,
       colliderMinY: -7,
       colliderMaxY: 7,
       companionScale: 0.075,
       locked: moonState !== 'landed',
+      level: moonState === 'landed' ? 'lower' : 'upper',
     });
     $('s-world')?.setAttribute('data-moon-state', moonState);
     if (moonState === 'locked' && MOON_REQUIREMENTS.every(id => visitedPaths.has(id))) startMoonFall();
@@ -1293,8 +1513,10 @@ async function loadScrollLandmark() {
     prepareMaterials(scroll, 0.38);
     const holder = new THREE.Group();
     holder.add(scroll);
-    holder.position.copy(SCROLL_POS);
     holder.rotation.set(0.08, -0.58, 0.12);
+    scrollBoundsY = verticalBoundsAtOrigin(holder);
+    applyLandmarkLayout();
+    holder.position.copy(SCROLL_POS);
     scene.add(holder);
     const light = new THREE.PointLight(0x79dfbe, 9, 20, 2);
     light.position.set(0, 1.5, 2);
@@ -1304,12 +1526,13 @@ async function loadScrollLandmark() {
       object: holder,
       focus: SCROLL_POS,
       baseY: SCROLL_POS.y,
-      bob: 0.1,
+      bob: 0,
       interactionRadius: 5.8,
       colliderRadius: 1.55,
       colliderMinY: -3.6,
       colliderMaxY: 4.5,
       companionScale: 0.1,
+      level: 'upper',
     });
   } catch (error) {
     console.warn('Scroll landmark could not load:', error);
@@ -1370,6 +1593,7 @@ async function loadBirdLandmark() {
       mixers,
       birds,
       locked: birdChaseStep < 3,
+      level: 'lower',
     });
   } catch (error) {
     console.warn('Bird landmark could not load:', error);
@@ -1443,7 +1667,7 @@ function bindEvents() {
       if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 6) drag.moved = true;
       if (drag.moved) {
         cameraYaw -= dx * 0.006;
-        cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0058, -0.08, 0.74);
+        cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0058, CAMERA_PITCH_MIN, CAMERA_PITCH_MAX);
       }
       drag.lastX = event.clientX;
       drag.lastY = event.clientY;
@@ -1452,8 +1676,9 @@ function bindEvents() {
   });
   canvas?.addEventListener('pointerup', event => {
     if (drag?.id === event.pointerId && !drag.moved) {
-      const id = landmarkAt(event.clientX, event.clientY);
-      if (id) interact(id);
+      const target = worldTargetAt(event.clientX, event.clientY);
+      if (target === 'admin') window.location.assign('/admin');
+      else if (target) interact(target);
     }
     drag = null;
   });
@@ -1462,7 +1687,7 @@ function bindEvents() {
   canvas?.addEventListener('wheel', event => {
     if (coarsePointer.matches) return;
     event.preventDefault();
-    cameraPitch = THREE.MathUtils.clamp(cameraPitch + event.deltaY * 0.00075, -0.08, 0.74);
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch + event.deltaY * 0.00075, CAMERA_PITCH_MIN, CAMERA_PITCH_MAX);
   }, { passive: false });
 }
 
@@ -1646,7 +1871,11 @@ function updateMovement(delta) {
     const verticalTarget = descendingFast ? -9 : (spaceHeld ? 3.5 : (touchLayout && touchFlightCruise ? 0 : -0.72));
     const response = descendingFast ? 9 : 4.8;
     verticalVelocity = THREE.MathUtils.lerp(verticalVelocity, verticalTarget, Math.min(1, delta * response));
-    player.position.y = Math.min(maxFlightHeight, player.position.y + verticalVelocity * delta);
+    const previousY = player.position.y;
+    const travel = resolveVerticalTravel(previousY, previousY + verticalVelocity * delta, player.position.x, player.position.z);
+    player.position.y = travel.y;
+    if (travel.surface === 'ceiling' || travel.surface === 'cloud-underside') verticalVelocity = Math.min(0, verticalVelocity);
+    if (travel.surface === 'cloud-top') finishLanding();
     if (verticalVelocity <= 0 && player.position.y <= groundHeight) finishLanding();
   } else {
     if (jumpQueued && grounded) {
@@ -1655,7 +1884,10 @@ function updateMovement(delta) {
     }
     jumpQueued = false;
     verticalVelocity -= 12.5 * delta;
-    player.position.y += verticalVelocity * delta;
+    const previousY = player.position.y;
+    const travel = resolveVerticalTravel(previousY, previousY + verticalVelocity * delta, player.position.x, player.position.z);
+    player.position.y = travel.y;
+    if (travel.surface === 'ceiling' || travel.surface === 'cloud-underside') verticalVelocity = Math.min(0, verticalVelocity);
     if (verticalVelocity <= 0 && player.position.y <= groundHeight) {
       player.position.y = groundHeight;
       verticalVelocity = 0;
@@ -1726,6 +1958,7 @@ function updateMovement(delta) {
   stage.dataset.playerX = player.position.x.toFixed(2);
   stage.dataset.playerY = player.position.y.toFixed(2);
   stage.dataset.playerZ = player.position.z.toFixed(2);
+  if (adminBoard) adminBoard.visible = player.position.y < PLATFORM.top - 1.5;
 }
 
 function setNearObject(id) {
@@ -1774,47 +2007,32 @@ function setStatus(message) {
   if (status) status.textContent = message;
 }
 
-function landmarkAt(clientX, clientY) {
-  if (!raycaster || !camera || !landmarks.size) return null;
+function worldTargetAt(clientX, clientY) {
+  if (!raycaster || !camera) return null;
   const rect = $('three-canvas').getBoundingClientRect();
   pointerNdc.set(
     ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
     -((clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1,
   );
   raycaster.setFromCamera(pointerNdc, camera);
-  const hit = raycaster.intersectObjects([...landmarks.values()].map(record => record.object), true)[0];
-  return hit?.object?.userData?.landmarkId || null;
+  const targets = [...landmarks.values()].map(record => record.object);
+  if (adminBoard?.visible) targets.push(adminBoard);
+  const hit = raycaster.intersectObjects(targets, true)[0];
+  return hit?.object?.userData?.adminPortal ? 'admin' : (hit?.object?.userData?.landmarkId || null);
+}
+
+function landmarkAt(clientX, clientY) {
+  const target = worldTargetAt(clientX, clientY);
+  return target === 'admin' ? null : target;
 }
 
 function updateObjectHover(x, y) {
-  if (!drag?.moved) setObjectHovered(landmarkAt(x, y));
+  if (!drag?.moved) setObjectHovered(worldTargetAt(x, y));
 }
 
 function setObjectHovered(id) {
   hoveredLandmarkId = id;
   $('three-canvas')?.classList.toggle('graybox-object-hovered', Boolean(id));
-}
-
-function updateCloudPassageOpacity(delta) {
-  cameraSoftClouds.clear();
-  if (!upperCloudVisual || !player) return;
-  // Preserve visibility when rising through the middle shelf. The enclosing
-  // cloud remains opaque and solid as the world's upper boundary.
-  groundProbeOrigin.set(player.position.x, 150, player.position.z);
-  groundRaycaster.set(groundProbeOrigin, groundProbeDirection);
-  groundRaycaster.near = 0;
-  groundRaycaster.far = 250;
-  const crossings = groundRaycaster.intersectObject(upperCloudVisual, true);
-  const top = crossings[0]?.point.y;
-  const bottom = crossings[crossings.length - 1]?.point.y;
-  const withinShelf = crossings.length > 1 && player.position.y + 2 > bottom && player.position.y < top + .5;
-  upperCloudVisual.traverse(node => {
-    if (!node.isMesh) return;
-    const target = withinShelf ? .12 : 1;
-    node.material.opacity = THREE.MathUtils.lerp(node.material.opacity, target, Math.min(1, delta * 9));
-    node.material.depthWrite = node.material.opacity > .98;
-    if (withinShelf || node.material.opacity < .7) cameraSoftClouds.add(node);
-  });
 }
 
 function updateCamera(delta, snap = false) {
@@ -1827,7 +2045,7 @@ function updateCamera(delta, snap = false) {
     player.position.z + Math.cos(cameraYaw) * horizontal,
   );
   cameraLook.copy(player.position).addScaledVector(forward.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)), 3.6);
-  cameraLook.y += 0.82;
+  cameraLook.y += 0.82 + Math.max(0, -cameraPitch) * 10.5;
 
   if (interactionFocus > 0) {
     const elapsedFocus = FOCUS_DURATION - interactionFocus;
@@ -1849,8 +2067,7 @@ function updateCamera(delta, snap = false) {
   // Constrain the *smoothed* result too: smoothing an unobstructed endpoint
   // alone can still carry the camera through a cloud between frames.
   sweepOrigin.copy(player.position); sweepOrigin.y += 1.2;
-  updateCloudPassageOpacity(delta);
-  const cameraFraction = cloudClearance(sweepOrigin, camera.position, .45, cloudSolids.filter(mesh => !cameraSoftClouds.has(mesh)));
+  const cameraFraction = cloudClearance(sweepOrigin, camera.position, .45, cloudSolids);
   if (cameraFraction < 1) camera.position.lerpVectors(sweepOrigin, camera.position, cameraFraction);
   camera.lookAt(cameraLook);
 }
