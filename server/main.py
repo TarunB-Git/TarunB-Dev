@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import assets, config, db, legal, resume, seed
@@ -27,12 +27,17 @@ logger = logging.getLogger("portfolio.http")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    config.validate_runtime()
     target = config.database_path()
-    if target.exists() and db.schema_version() < db.MIGRATIONS[-1][0]:
+    if db.is_sqlite() and target.exists() and db.schema_version() < db.MIGRATIONS[-1][0]:
         backup = db.backup_database()
         logger.info(json.dumps({"event": "pre_migration_backup", "path": str(backup)}))
     db.init_db()
+    copied = db.backfill_local_blobs()
+    if copied:
+        logger.info(json.dumps({"event": "legacy_uploads_copied_to_database", "count": copied}))
     ensure_passphrase()
+    seed.sync_code_defaults()
     seed.seed_if_empty()
     cleanup()
     yield
@@ -129,7 +134,9 @@ async def production_boundary(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["X-Frame-Options"] = "DENY"
+    # Device mode embeds same-origin writing pages inside its window chrome.
+    # External sites remain unable to frame the portfolio.
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     nonce = response.headers.get("x-portfolio-csp-nonce", "")
@@ -137,7 +144,7 @@ async def production_boundary(request: Request, call_next):
         del response.headers["x-portfolio-csp-nonce"]
     nonce_source = f" 'nonce-{nonce}'" if nonce else ""
     csp = (
-        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; frame-src 'self'; "
         f"script-src 'self'{nonce_source} 'wasm-unsafe-eval'; "
         "style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; "
         "media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:; form-action 'self'"
@@ -153,7 +160,7 @@ async def production_boundary(request: Request, call_next):
     elif request.url.path.startswith("/static/"):
         # Compatibility URLs remain available, but may never be cached as a build.
         response.headers["Cache-Control"] = "no-cache"
-    elif request.url.path in {"/", "/recruiter", "/friend", "/viewer", "/personal"}:
+    elif request.url.path in {"/", "/recruiter", "/friend", "/viewer", "/personal", "/blogs"} or request.url.path.startswith("/blog/"):
         response.headers["Cache-Control"] = "no-cache"
     if request.url.path.startswith("/api/v1/admin"):
         response.headers["Cache-Control"] = "private,no-store"
@@ -225,6 +232,8 @@ def _spa_html(
     og_type: str = "website",
 ) -> HTMLResponse:
     source = assets.version_asset_urls((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+    body_open = '<body data-content-source="code">' if config.code_content_preview() else "<body>"
+    source = source.replace("<body>", body_open, 1)
     site = _site_settings()
     site_title = str(site.get("site_title") or "Choose Your Path").strip()
     title = title or site_title
@@ -251,7 +260,7 @@ def _spa_html(
         f'<meta name="description" content="{html.escape(description, quote=True)}">', 1,
     )
     if fallback:
-        source = source.replace("<body>", f"<body><noscript>{fallback}</noscript>", 1)
+        source = source.replace(body_open, f"{body_open}<noscript>{fallback}</noscript>", 1)
     return HTMLResponse(source, headers={"X-Portfolio-CSP-Nonce": nonce})
 
 
@@ -289,6 +298,35 @@ def path_page(request: Request):
     )
 
 
+def _journal_html(*, title: str, description: str, canonical_path: str, structured: dict) -> HTMLResponse:
+    source = assets.version_asset_urls((STATIC_DIR / "blogs.html").read_text(encoding="utf-8"))
+    site = _site_settings()
+    canonical = _canonical_base(site) + canonical_path
+    nonce = secrets.token_urlsafe(18)
+    metadata = (
+        f'<link rel="canonical" href="{html.escape(canonical, quote=True)}">'
+        f'<meta property="og:title" content="{html.escape(title, quote=True)}">'
+        f'<meta property="og:description" content="{html.escape(description, quote=True)}">'
+        f'<meta property="og:url" content="{html.escape(canonical, quote=True)}">'
+        f'<meta property="og:type" content="{"article" if structured.get("@type") == "BlogPosting" else "website"}">'
+        f'<script type="application/ld+json" nonce="{nonce}">{json.dumps(structured, ensure_ascii=False).replace("<", "\\u003c")}</script>'
+    )
+    source = source.replace("</head>", metadata + "</head>", 1)
+    source = source.replace("<title>Writing</title>", f"<title>{html.escape(title)}</title>", 1)
+    source = source.replace('content="Writing from across the paths."', f'content="{html.escape(description, quote=True)}"', 1)
+    return HTMLResponse(source, headers={"X-Portfolio-CSP-Nonce": nonce})
+
+
+@app.get("/blogs", response_class=HTMLResponse)
+def blogs_page():
+    site = _site_settings()
+    title = f"Writing — {site.get('site_title') or 'Portfolio'}"
+    return _journal_html(
+        title=title, description="Writing from across the paths.", canonical_path="/blogs",
+        structured={"@context": "https://schema.org", "@type": "Blog", "name": title, "url": _canonical_base(site) + "/blogs"},
+    )
+
+
 @app.get("/blog/{slug}", response_class=HTMLResponse)
 def blog_page(slug: str):
     with db.connect() as con:
@@ -296,11 +334,6 @@ def blog_page(slug: str):
     if not row:
         raise HTTPException(404, "no such post")
     excerpt = row["excerpt"] or row["body_md"][:220]
-    fallback = (
-        f'<article><h1>{html.escape(row["title"])}</h1>'
-        + "".join(f"<p>{html.escape(paragraph)}</p>" for paragraph in row["body_md"].split("\n\n"))
-        + "</article>"
-    )
     site = _site_settings()
     structured = {
         "@context": "https://schema.org", "@type": "BlogPosting", "headline": row["title"],
@@ -309,10 +342,7 @@ def blog_page(slug: str):
     }
     if site.get("owner_name"):
         structured["author"] = {"@type": "Person", "name": site["owner_name"]}
-    return _spa_html(
-        title=row["title"], description=excerpt, canonical_path=f"/blog/{slug}",
-        fallback=fallback, structured=structured, og_type="article",
-    )
+    return _journal_html(title=row["title"], description=excerpt, canonical_path=f"/blog/{slug}", structured=structured)
 
 
 @app.get("/resume", response_class=HTMLResponse)
@@ -331,21 +361,32 @@ def resume_page():
 def resume_pdf():
     uploaded = db.get_content("resume_pdf")
     if isinstance(uploaded, dict) and uploaded.get("stored_name"):
-        target = (config.upload_dir() / uploaded["stored_name"]).resolve()
-        if target.parent == config.upload_dir().resolve() and target.is_file():
-            return FileResponse(target, media_type="application/pdf", filename="resume.pdf", headers={"Cache-Control": "no-store"})
+        blob = db.get_blob(str(uploaded["stored_name"]))
+        if blob:
+            return Response(
+                blob["data"], media_type="application/pdf",
+                headers={"Cache-Control": "no-store", "Content-Disposition": 'inline; filename="resume.pdf"'},
+            )
     data = db.get_content("resume")
     if not isinstance(data, dict):
         raise HTTPException(404, "resume has not been published")
-    try:
-        target = resume.cached_pdf(data)
-    except OSError:
-        # Read-only deployments still get a valid generated PDF response.
-        return Response(
-            resume.build_pdf(data), media_type="application/pdf",
-            headers={"Content-Disposition": 'inline; filename="resume.pdf"'},
-        )
-    return FileResponse(target, media_type="application/pdf", filename="resume.pdf", content_disposition_type="inline")
+    return Response(
+        resume.build_pdf(data), media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="resume.pdf"'},
+    )
+
+
+@app.get("/media/{stored_name}")
+def media_file(stored_name: str):
+    if not stored_name or "/" in stored_name or "\\" in stored_name:
+        raise HTTPException(404, "no such media asset")
+    blob = db.get_blob(stored_name)
+    if not blob:
+        raise HTTPException(404, "no such media asset")
+    return Response(
+        blob["data"], media_type=blob["mime_type"],
+        headers={"ETag": f'"{blob["sha256"]}"', "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.get("/legal", response_class=HTMLResponse)
@@ -403,6 +444,4 @@ def readiness():
     return {"status": "ready", "schema_version": db.schema_version()}
 
 
-# Uploaded media is isolated from executable static assets and MIME-sniffing is disabled.
-app.mount("/media", StaticFiles(directory=config.upload_dir(), check_dir=False), name="media")
 app.mount("/static", PublicAssets(directory=STATIC_DIR), name="static")

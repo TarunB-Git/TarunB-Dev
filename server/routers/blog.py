@@ -79,7 +79,7 @@ def create_post(p: PostIn):
             cur = con.execute(
                 "INSERT INTO blog_posts(slug,title,body_md,tags_json,published) VALUES(?,?,?,?,?)",
                 (p.slug, p.title, p.body_md, json.dumps(p.tags), int(p.published)))
-        except db.sqlite3.IntegrityError:
+        except db.IntegrityError:
             raise HTTPException(409, "slug already exists")
         return {"id": cur.lastrowid}
 

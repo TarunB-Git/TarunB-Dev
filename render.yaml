@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: four-path-portfolio
+    runtime: docker
+    plan: 0.5c-512mb
+    numInstances: 1
+    healthCheckPath: /readyz
+    envVars:
+      - key: ADMIN_PASSPHRASE
+        sync: false
+      - key: ADMIN_RECOVERY_TOKEN
+        sync: false
+      - key: PORTFOLIO_DATA_DIR
+        value: /data
+      - key: PORTFOLIO_DB_PATH
+        value: /data/site.db
+      - key: PORTFOLIO_UPLOAD_DIR
+        value: /data/uploads
+      - key: PORTFOLIO_BACKUP_DIR
+        value: /data/backups
+      - key: PORTFOLIO_SECURE_COOKIES
+        value: "true"
+      - key: PORTFOLIO_TRUST_PROXY_HEADERS
+        value: "true"
+    disk:
+      name: portfolio-data
+      mountPath: /data
+      sizeGB: 1

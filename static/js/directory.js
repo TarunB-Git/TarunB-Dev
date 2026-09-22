@@ -1,11 +1,13 @@
 /* Portfolio OS: a stateful file manager and window shell. */
+import { applyBookingLink, loadBookingUrl } from './booking.js';
+import { maybeGet } from './v1.js';
 const $ = id => document.getElementById(id);
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
-const PATH_TITLES = { recruiter: 'Work & Résumé', viewer: 'About Me', personal: 'Library & Notes', friend: 'Stories & Memories' };
+const PATH_TITLES = { recruiter: 'Work & Résumé', viewer: 'About Me', personal: 'Library & Blogs', friend: 'Stories & Memories' };
 const CONTACTS = {
-  email: 'mailto:hello@example.com?subject=Portfolio%20conversation&body=Hi%2C%20I%20found%20your%20portfolio%20and%20would%20like%20to%20talk%20about...',
-  call: 'tel:+46700000000',
-  whatsapp: 'https://wa.me/46700000000?text=Hi%2C%20I%20found%20your%20portfolio.',
+  email: 'mailto:tarunb.co@gmail.com?subject=Portfolio%20conversation&body=Hi%2C%20I%20found%20your%20portfolio%20and%20would%20like%20to%20talk%20about...',
+  call: 'tel:+46767464810',
+  whatsapp: 'https://wa.me/46767464810?text=Hi%2C%20I%20found%20your%20portfolio.',
 };
 let initialized = false;
 let callbacks = {};
@@ -14,6 +16,16 @@ let locationHistory = ['/home', '/home/guest', currentLocation];
 let historyIndex = 2;
 let renderedLocationKey = '';
 let renderedDesktopKey = '';
+let publicMedia = [];
+const htmlEsc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+
+function isMobileWindow() {
+  return typeof innerWidth !== 'undefined' && innerWidth <= 720;
+}
+
+function maximizeNewMobileWindow(node) {
+  if (node && isMobileWindow()) node.classList.add('is-maximized');
+}
 
 function moonAvailable() {
   try { return JSON.parse(sessionStorage.getItem('cloud_landmarks_visited_v2') || '[]').includes('friend'); }
@@ -34,6 +46,7 @@ function entriesFor(path) {
       { name: 'Work & Résumé', path: 'recruiter', note: 'Recruiter view', kind: 'path' },
       { name: 'About Me', path: 'viewer', note: "The ship's voyage", kind: 'path' },
       { name: 'Library & Notes', path: 'personal', note: 'Reading timeline', kind: 'path' },
+      documentFile('Blogs', 'blogs', 'Open the writing archive'),
       documentFile('Legal & Credits.txt', 'legal'),
       shortcut('Email', CONTACTS.email, 'Start an email', '@'),
       shortcut('Call', CONTACTS.call, 'Call by phone', '☎'),
@@ -43,7 +56,9 @@ function entriesFor(path) {
     return items;
   }
   if (path === '/home/guest/Downloads') return [documentFile('Resume.pdf', 'resume', 'Downloadable résumé · PDF')];
-  if (path === '/home/guest/Pictures') return [documentFile('cloud-world-reference.png', 'picture-cloud', 'Placeholder image · PNG'), documentFile('ship-concept.png', 'picture-ship', 'Placeholder image · PNG')];
+  if (path === '/home/guest/Pictures') return publicMedia.length
+    ? publicMedia.map(media => ({ ...media, name: media.original_name || `media-${media.id}`, note: `${media.mime_type || 'Media'} · uploaded from Admin`, kind: 'media' }))
+    : [documentFile('README.txt', 'pictures-empty', 'Upload images in Admin → Files & Media')];
   if (path === '/home/guest/Trash') return [documentFile('README.txt', 'trash', 'Read-only note')];
   return null;
 }
@@ -66,7 +81,7 @@ function entryType(entry) {
 
 function entryGlyph(entry, type) {
   if (type === 'shortcut') return entry.icon || '↗';
-  if (type === 'document') return entry.document?.startsWith('picture') ? '▧' : '≡';
+  if (type === 'document') return entry.kind === 'media' || entry.document?.startsWith('picture') ? '▧' : '≡';
   if (type === 'profile') return entry.icon === 'admin' ? '⚿' : '●';
   return '';
 }
@@ -132,7 +147,15 @@ function navigate(path, record = true) {
   if (!entriesFor(path)) { openDocument('not-found', path); return false; }
   currentLocation = path;
   if (record) { locationHistory = locationHistory.slice(0, historyIndex + 1); locationHistory.push(path); historyIndex = locationHistory.length - 1; }
-  renderLocation(); restoreFiles(); return true;
+  renderLocation();
+  const files = $('directory-window');
+  const filesWereHidden = files?.classList.contains('is-minimized') || files?.classList.contains('is-closed');
+  if (filesWereHidden) restoreFiles();
+  else {
+    focusWindow(files);
+    updateDockState();
+  }
+  return true;
 }
 
 let windowOrder = 60;
@@ -155,10 +178,13 @@ function animateWindow(node, kind, after) {
 }
 function restoreFiles(reset = false) {
   const node = $('directory-window');
+  const wasHidden = node?.classList.contains('is-minimized') || node?.classList.contains('is-closed');
   if (reset) { currentLocation = '/home/guest/Desktop'; locationHistory = ['/home', '/home/guest', currentLocation]; historyIndex = 2; renderLocation(); }
-  node?.classList.remove('is-minimized', 'is-closed'); node?.classList.add('is-restoring');
+  if (reset) maximizeNewMobileWindow(node);
+  node?.classList.remove('is-minimized', 'is-closed');
+  node?.classList.toggle('is-restoring', Boolean(wasHidden));
   focusWindow(node);
-  setTimeout(() => node?.classList.remove('is-restoring'), REDUCED.matches ? 0 : 320);
+  if (wasHidden) setTimeout(() => node?.classList.remove('is-restoring'), REDUCED.matches ? 0 : 320);
   updateDockState();
 }
 
@@ -190,7 +216,7 @@ function bindResize(windowNode) {
   windowNode.append(handle);
   let resize = null;
   handle.addEventListener('pointerdown', event => {
-    if (windowNode.classList.contains('is-maximized') || innerWidth < 721) return;
+    if (windowNode.classList.contains('is-maximized')) return;
     event.preventDefault();
     event.stopPropagation();
     const rect = windowNode.getBoundingClientRect();
@@ -203,20 +229,26 @@ function bindResize(windowNode) {
       height: rect.height,
       baseX: parseFloat(style.getPropertyValue('--win-x')) || 0,
       baseY: parseFloat(style.getPropertyValue('--win-y')) || 0,
-      minWidth: Math.max(360, parseFloat(style.minWidth) || 0),
-      minHeight: Math.max(280, parseFloat(style.minHeight) || 0),
+      mobile: isMobileWindow(),
+      minWidth: Math.min(innerWidth - 20, Math.max(280, parseFloat(style.minWidth) || 0)),
+      minHeight: Math.min(innerHeight - 80, Math.max(260, parseFloat(style.minHeight) || 0)),
     };
     handle.setPointerCapture?.(event.pointerId);
     windowNode.classList.add('is-resizing');
   });
   handle.addEventListener('pointermove', event => {
     if (!resize || resize.id !== event.pointerId) return;
-    const width = Math.max(resize.minWidth, Math.min(innerWidth - 16, resize.width + event.clientX - resize.startX));
-    const height = Math.max(resize.minHeight, Math.min(innerHeight - 40, resize.height + event.clientY - resize.startY));
+    const rect = windowNode.getBoundingClientRect();
+    const maxWidth = resize.mobile ? innerWidth - rect.left - 8 : innerWidth - 16;
+    const maxHeight = resize.mobile ? innerHeight - rect.top - 8 : innerHeight - 40;
+    const width = Math.max(resize.minWidth, Math.min(maxWidth, resize.width + event.clientX - resize.startX));
+    const height = Math.max(resize.minHeight, Math.min(maxHeight, resize.height + event.clientY - resize.startY));
     windowNode.style.width = `${width}px`;
     windowNode.style.height = `${height}px`;
-    windowNode.style.setProperty('--win-x', `${resize.baseX + (width - resize.width) / 2}px`);
-    windowNode.style.setProperty('--win-y', `${resize.baseY + (height - resize.height) / 2}px`);
+    if (!resize.mobile) {
+      windowNode.style.setProperty('--win-x', `${resize.baseX + (width - resize.width) / 2}px`);
+      windowNode.style.setProperty('--win-y', `${resize.baseY + (height - resize.height) / 2}px`);
+    }
   });
   const finish = event => {
     if (!resize || resize.id !== event.pointerId) return;
@@ -229,19 +261,46 @@ function bindResize(windowNode) {
 }
 
 function documentMarkup(kind, detail = '') {
-  if (kind === 'legal') return `<p class="doc-meta">READ ONLY · LEGAL, PRIVACY & CREDITS</p><h1>Legal and credits</h1><p class="doc-updated">Last reviewed: September 2026</p><p>This document explains ownership, privacy, cookies, submissions, and the third-party assets used by this portfolio. Replace the controller details before publishing.</p><h2 id="privacy">Privacy</h2><p><strong>Controller:</strong> Portfolio owner · <a href="mailto:hello@example.com">hello@example.com</a></p><p>The site stores information you deliberately submit through contact, comment, and message forms. Contact details remain private. A message is published only after separate consent and owner approval.</p><p>Optional first-party analytics record aggregate events such as page views, path choices, résumé opens, shares, broad traffic source, and coarse browser context (device class, browser family, language, and world region from the time zone). No age, gender, ethnicity, precise location, or cross-site advertising profile is inferred. Optional analytics remain disabled until accepted through Privacy choices.</p><h2 id="cookies">Cookies and local storage</h2><ul><li><strong>visitor_id</strong> supports reversible reactions without connecting them to a named profile.</li><li><strong>admin_session</strong> is issued only after an owner login.</li><li>Session storage remembers visited landmarks, unlocks, and interface state for this browser session.</li></ul><p>Necessary site features continue to work when optional analytics are rejected.</p><h2 id="retention">Retention and rights</h2><p>Consented raw analytics events are aggregated and removed after 90 days. Owner sessions expire according to server configuration. To request access, correction, or deletion of a submitted message, email the controller with enough detail to locate it.</p><h2 id="terms">Terms of use</h2><ul><li>Portfolio text, design, and original code belong to the site owner unless stated otherwise.</li><li>Do not submit unlawful, abusive, confidential, or third-party material you cannot share.</li><li>User submissions remain yours; publication requires the permissions described above.</li><li>The site and external links are provided as-is without a guarantee of continuous availability.</li></ul><h2 id="attribution">3D model attribution</h2><div class="doc-credit"><strong>Ship in Clouds</strong><span>Bastien Genbrugge · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/ship-in-clouds-c475323dc7f24e26ba2009c08c8e1941" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>Old / Ancient Scroll</strong><span>Kigha · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/old-ancient-scroll-73e9333251c7490786f99e67beb41d6e" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>Moon</strong><span>Akshat (shooter24994) · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/moon-4db2273f6dd943b8ad7fa5e3b1b2431a" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>Bird</strong><span>moizmuhammad373 · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/bird-e93a906eb38343c4a14458a637136329" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>KayKit Adventurers · Mage</strong><span>Kay Lousberg · CC0 1.0</span><a href="https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0" target="_blank" rel="noopener noreferrer">Original pack ↗</a></div><p>Models are scaled, positioned, materially adjusted, and optimized for web delivery. The site also uses Three.js, FastAPI, and locally served open-source fonts.</p><h2>Contact</h2><p>Questions about privacy, attribution, or removal requests: <a href="mailto:hello@example.com?subject=Portfolio%20legal%20question">hello@example.com</a>.</p>`;
+  if (kind === 'blogs') {
+    const requested = String(detail || '/blogs');
+    const path = /^\/blogs(?:[?#]|$)/.test(requested) || /^\/blog\/[a-z0-9-]+(?:[?#]|$)/.test(requested)
+      ? requested : '/blogs';
+    const url = new URL(path, location.origin);
+    url.searchParams.set('embed', '1');
+    return `<iframe class="directory-blog-frame" src="${htmlEsc(`${url.pathname}${url.search}`)}" title="Writing archive"></iframe>`;
+  }
+  if (kind === 'legal') return `<p class="doc-meta">READ ONLY · LEGAL, PRIVACY & CREDITS</p><h1>Legal and credits</h1><p class="doc-updated">Last reviewed: September 2026</p><p>This document explains ownership, privacy, cookies, submissions, and the third-party assets used by this portfolio. </p><h2 id="privacy">Privacy</h2><p><strong>Controller:</strong> Portfolio owner · <a href="mailto:tarunb.co@gmail.com">tarunb.co@gmail.com</a></p><p>The site stores information you deliberately submit through contact, comment, and message forms. Contact details remain private. A message is published only after separate consent and owner approval.</p><p>Optional first-party analytics record aggregate events such as page views, path choices, résumé opens, shares, broad traffic source, and coarse browser context (device class, browser family, language, and world region from the time zone). No age, gender, ethnicity, precise location, or cross-site advertising profile is inferred. Optional analytics remain disabled until accepted through Privacy choices.</p><h2 id="cookies">Cookies and local storage</h2><ul><li><strong>visitor_id</strong> supports reversible reactions without connecting them to a named profile.</li><li><strong>admin_session</strong> is issued only after an owner login.</li><li>Session storage remembers visited landmarks, unlocks, and interface state for this browser session.</li></ul><p>Necessary site features continue to work when optional analytics are rejected.</p><h2 id="retention">Retention and rights</h2><p>Consented raw analytics events are aggregated and removed after 90 days. Owner sessions expire according to server configuration. To request access, correction, or deletion of a submitted message, email the controller with enough detail to locate it.</p><h2 id="terms">Terms of use</h2><ul><li>Portfolio text, design, and original code belong to the site owner unless stated otherwise.</li><li>Do not submit unlawful, abusive, confidential, or third-party material you cannot share.</li><li>User submissions remain yours; publication requires the permissions described above.</li><li>The site and external links are provided as-is without a guarantee of continuous availability.</li></ul><h2 id="attribution">3D model attribution</h2><div class="doc-credit"><strong>Ship in Clouds</strong><span>Bastien Genbrugge · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/ship-in-clouds-c475323dc7f24e26ba2009c08c8e1941" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>Old / Ancient Scroll</strong><span>Kigha · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/old-ancient-scroll-73e9333251c7490786f99e67beb41d6e" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>Moon</strong><span>Akshat (shooter24994) · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/moon-4db2273f6dd943b8ad7fa5e3b1b2431a" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>Bird</strong><span>moizmuhammad373 · CC BY 4.0</span><a href="https://sketchfab.com/3d-models/bird-e93a906eb38343c4a14458a637136329" target="_blank" rel="noopener noreferrer">Original model ↗</a></div><div class="doc-credit"><strong>KayKit Adventurers · Mage</strong><span>Kay Lousberg · CC0 1.0</span><a href="https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0" target="_blank" rel="noopener noreferrer">Original pack ↗</a></div><p>Models are scaled, positioned, materially adjusted, and optimized for web delivery. The site also uses Three.js, FastAPI, and locally served open-source fonts.</p><h2>Contact</h2><p>Questions about privacy, attribution, or removal requests: <a href="mailto:hello@example.com?subject=Portfolio%20legal%20question">hello@example.com</a>.</p>`;
   if (kind === 'resume') return '<p class="doc-meta">PDF DOCUMENT</p><h1>Résumé</h1><p>The full downloadable résumé, separate from the abridged card view.</p><p><a href="/resume.pdf" download="resume.pdf">Download résumé PDF</a></p>';
   if (kind === 'picture-cloud') return `<p class="doc-meta">IMAGE PREVIEW · Placeholder</p><div class="placeholder-picture cloud-picture"><span>Cloud reference</span></div><p>A future media item managed from the owner dashboard.</p>`;
   if (kind === 'picture-ship') return `<p class="doc-meta">IMAGE PREVIEW · Placeholder</p><div class="placeholder-picture ship-picture"><span>Ship concept</span></div><p>A future project or reference image.</p>`;
+  if (kind === 'pictures-empty') return '<p class="doc-meta">PICTURES</p><h1>No uploaded media yet</h1><p>Images and videos uploaded in <strong>Admin → Files & Media</strong> appear in this folder. Their bytes live in the server upload directory, while the database keeps their names and descriptions.</p>';
+  if (kind === 'media') {
+    const media = detail || {};
+    const url = /^\/media\/[A-Za-z0-9._-]+$/.test(media.url || '') ? media.url : '';
+    const preview = String(media.mime_type || '').startsWith('video/')
+      ? `<video src="${htmlEsc(url)}" controls style="max-width:100%;max-height:55vh"></video>`
+      : `<img src="${htmlEsc(url)}" alt="${htmlEsc(media.alt_text || '')}" style="max-width:100%;max-height:55vh;object-fit:contain">`;
+    return `<p class="doc-meta">${htmlEsc(media.mime_type || 'MEDIA')} · ${Number(media.byte_size || 0).toLocaleString()} bytes</p>${preview}<p>${htmlEsc(media.alt_text || media.original_name || '')}</p><p><a href="${htmlEsc(url)}" download>Download original</a></p>`;
+  }
   if (kind === 'trash') return `<p class="doc-meta">READ ONLY</p><h1>Trash</h1><p>Nothing important has been deleted. Placeholder files can live here while the portfolio is being assembled.</p>`;
   return `<p class="doc-meta">404 · FILE NOT FOUND</p><h1>That path does not exist.</h1><p><code>${String(detail).replace(/[<>&]/g, '')}</code> is not present in this profile.</p><button type="button" data-document-action="close">Return to Files</button>`;
 }
 function openDocument(kind, detail = '') {
   const node = $('directory-document-window'); if (!node) return;
-  const titles = { legal: 'Legal & Credits.txt', resume: 'Resume.pdf', 'picture-cloud': 'cloud-world-reference.png', 'picture-ship': 'ship-concept.png', trash: 'README.txt', 'not-found': '404 — File not found' };
-  $('document-window-title').textContent = titles[kind] || 'Document'; $('directory-document-content').innerHTML = documentMarkup(kind, detail);
-  node.hidden = false; node.classList.remove('is-minimized', 'is-closed'); node.classList.add('is-restoring'); focusWindow(node); setTimeout(() => node.classList.remove('is-restoring'), 320);
+  const wasClosed = node.hidden || node.classList.contains('is-closed');
+  const titles = { blogs: 'Blogs — The Scroll', legal: 'Legal & Credits.txt', resume: 'Resume.pdf', 'picture-cloud': 'cloud-world-reference.png', 'picture-ship': 'ship-concept.png', 'pictures-empty': 'Pictures — README.txt', trash: 'README.txt', 'not-found': '404 — File not found' };
+  const content = $('directory-document-content');
+  $('document-window-title').textContent = kind === 'media' ? (detail.original_name || 'Media') : (titles[kind] || 'Document');
+  content.classList.toggle('directory-blog-document', kind === 'blogs');
+  content.innerHTML = documentMarkup(kind, detail);
+  node.hidden = false; node.classList.remove('is-minimized', 'is-closed');
+  if (wasClosed) maximizeNewMobileWindow(node);
+  node.classList.add('is-restoring'); focusWindow(node); setTimeout(() => node.classList.remove('is-restoring'), 320);
   updateDockState();
+}
+
+export function openBlogWindow(path = '/blogs') {
+  openDocument('blogs', path);
 }
 function closeDocument(minimize = false) {
   const node = $('directory-document-window');
@@ -260,6 +319,7 @@ function openEntry(entry) {
     if (entry.href.startsWith('https:')) window.open(entry.href, '_blank', 'noopener,noreferrer');
     else location.href = entry.href;
   }
+  else if (entry.kind === 'media') openDocument('media', entry);
   else openDocument(entry.document);
 }
 
@@ -278,6 +338,7 @@ function updateClockAndCalendar() {
 
 export function setDirectoryApp(path, active, { discard = false } = {}) {
   const node = $('directory-app-window'); if (!node) return;
+  const wasOpen = node.classList.contains('active') && !node.classList.contains('is-closed');
   const parent = document.body.dataset.shellMode === 'directory' ? $('s-directory') : document.body;
   if (parent && node.parentElement !== parent) parent.append(node);
   if (discard) {
@@ -291,6 +352,7 @@ export function setDirectoryApp(path, active, { discard = false } = {}) {
     /* Opening another path must always restore the app, even when the previous
        path was minimized. This is the state that previously left Device inert. */
     if (changedPath || node.classList.contains('is-minimized')) node.classList.remove('is-minimized');
+    if (!wasOpen) maximizeNewMobileWindow(node);
     focusWindow(node);
   } else if (node.classList.contains('active')) {
     /* Cloud and Device own separate navigation state. Suspend, do not destroy,
@@ -310,6 +372,23 @@ export function discardDirectoryApp() {
 
 export function initDirectory(next = {}) {
   callbacks = { ...callbacks, ...next }; if (initialized) return; initialized = true;
+  loadBookingUrl().then(url => applyBookingLink($('directory-book-call'), url));
+  maybeGet('/content/card').then(payload => {
+    const card = payload?.data || payload || {};
+    const email = String(card.email || '').trim();
+    const phone = String(card.phone || '').trim();
+    const digits = phone.replace(/\D/g, '');
+    if (email) CONTACTS.email = `mailto:${email}?subject=Portfolio%20conversation&body=Hi%2C%20I%20found%20your%20portfolio%20and%20would%20like%20to%20talk%20about...`;
+    if (phone) CONTACTS.call = `tel:${phone}`;
+    if (digits) CONTACTS.whatsapp = `https://wa.me/${digits}?text=Hi%2C%20I%20found%20your%20portfolio.`;
+    renderLocation(true);
+    renderDesktopShortcuts(true);
+  });
+  maybeGet('/media').then(payload => {
+    publicMedia = Array.isArray(payload) ? payload : payload?.items || [];
+    if (currentLocation === '/home/guest/Pictures') renderLocation(true);
+  });
+  maximizeNewMobileWindow($('directory-window'));
   bindDrag($('directory-window'), $('directory-titlebar')); bindDrag($('directory-document-window'), $('document-titlebar')); bindDrag($('directory-app-window'), $('app-titlebar'));
   bindResize($('directory-window')); bindResize($('directory-document-window')); bindResize($('directory-app-window'));
   updateClockAndCalendar(); setInterval(updateClockAndCalendar, 30_000); renderLocation(); renderDesktopShortcuts(); updateDockState();

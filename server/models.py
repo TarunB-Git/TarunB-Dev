@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator,
 
 
 PathName = Literal["recruiter", "viewer", "friend", "personal"]
+BlogPrimaryTag = Literal["work", "thoughts", "dreams", "friends", "travel", "life"]
 LayoutPreset = Literal["upper", "lower", "feature", "media-left", "media-right"]
 
 
@@ -286,7 +287,13 @@ class PostIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     body_md: str = Field(default="", max_length=60000)
     excerpt: str = Field(default="", max_length=500)
+    # Path tags decide which in-world scrolls surface a post. The editorial
+    # primary/secondary tags power the standalone writing archive.
     tags: list[PathName] = Field(default_factory=list, max_length=4)
+    primary_tag: BlogPrimaryTag = "thoughts"
+    secondary_tags: list[str] = Field(default_factory=list, max_length=12)
+    series: str = Field(default="", max_length=100)
+    created_at: str | None = Field(default=None, max_length=40)
     published: bool = False
 
     @field_validator("title", "excerpt")
@@ -299,6 +306,24 @@ class PostIn(BaseModel):
         if not self.title:
             raise ValueError("post title cannot be blank")
         return self
+
+    @field_validator("secondary_tags")
+    @classmethod
+    def clean_secondary_tags(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for value in values:
+            tag = safe_plain_text(str(value), allow_newlines=False).strip().lower()
+            tag = "-".join(tag.split())
+            if not tag or len(tag) > 40 or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in tag):
+                raise ValueError("secondary tags may contain lowercase letters, numbers, spaces, and hyphens")
+            if tag not in cleaned:
+                cleaned.append(tag)
+        return cleaned
+
+    @field_validator("series")
+    @classmethod
+    def clean_series(cls, value: str) -> str:
+        return safe_plain_text(value, allow_newlines=False)
 
 
 class CommentIn(BaseModel):

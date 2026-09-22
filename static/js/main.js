@@ -2,7 +2,7 @@
 import { SND } from './audio.js';
 import { cur, curRing, setFlame } from './cursor.js';
 import { initWorld, onReturnToWorld, pauseWorld } from './graybox.js';
-import { discardDirectoryApp, initDirectory, showDirectory, setDirectoryApp } from './directory.js';
+import { discardDirectoryApp, initDirectory, openBlogWindow, showDirectory, setDirectoryApp } from './directory.js';
 import { bindConsentBanner } from './consent.js';
 import { trackView, sendStat, openStats, closeStats } from './stats.js';
 import {
@@ -390,6 +390,16 @@ document.querySelectorAll('.site-home,[data-action="home"]').forEach(button => {
 });
 
 document.addEventListener('click', event => {
+  const blogLink = event.target.closest('a[href]');
+  if (blogLink && document.body.dataset.shellMode === 'directory') {
+    const url = new URL(blogLink.href, location.href);
+    if (url.origin === location.origin && (url.pathname === '/blogs' || /^\/blog\/[a-z0-9-]+$/.test(url.pathname))) {
+      event.preventDefault();
+      event.stopPropagation();
+      openBlogWindow(`${url.pathname}${url.search}`);
+      return;
+    }
+  }
   /* Body also carries data-shell-mode for styling. Restrict this lookup to
      the actual switch so ordinary buttons do not get mistaken for it. */
   const shellButton = event.target.closest('#experience-switch [data-shell-mode],#webgl-notice [data-shell-mode]');

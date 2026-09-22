@@ -15,7 +15,7 @@ export class ApiError extends Error {
 
 function isAdminMutation(method, path) {
   return method !== 'GET' && method !== 'HEAD' && path.startsWith('/admin/') &&
-    path !== '/admin/login' && path !== '/admin/setup';
+    path !== '/admin/login' && path !== '/admin/setup' && path !== '/admin/recover';
 }
 
 async function readCsrf() {

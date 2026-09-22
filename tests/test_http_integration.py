@@ -2,7 +2,7 @@ import re
 
 from fastapi.testclient import TestClient
 
-from server import config, db
+from server import config, db, seed
 from server.auth import set_passphrase
 from server.main import ASSET_NAMESPACE, app
 from server.models import PostIn
@@ -58,12 +58,50 @@ def test_http_deep_links_security_headers_and_csrf():
 def test_owner_first_run_setup_is_one_time_and_accepts_any_nonempty_passphrase():
     with TestClient(app, backend_options={"use_uvloop": True}) as client:
         status = client.get("/api/v1/admin/setup-status")
-        assert status.status_code == 200 and status.json() == {"needs_setup": True}
-        created = client.post("/api/v1/admin/setup", json={"passphrase": "x"})
+        assert status.status_code == 200 and status.json() == {"needs_setup": True, "recovery_available": False}
+        # Local requests are allowed at the actual browser origin even when it
+        # differs from PORTFOLIO_BASE_URL (for example 127.0.0.1:8800).
+        created = client.post(
+            "/api/v1/admin/setup", json={"passphrase": "x"},
+            headers={"Origin": "http://testserver"},
+        )
         assert created.status_code == 200 and created.json()["csrf_token"]
         assert client.get("/api/v1/admin/me").json() == {"admin": True}
-        assert client.get("/api/v1/admin/setup-status").json() == {"needs_setup": False}
+        assert client.get("/api/v1/admin/setup-status").json() == {"needs_setup": False, "recovery_available": False}
         assert client.post("/api/v1/admin/setup", json={"passphrase": "another"}).status_code == 409
+
+
+def test_owner_can_recover_a_forgotten_passphrase_after_deployment(monkeypatch):
+    monkeypatch.setenv("ADMIN_RECOVERY_TOKEN", "render-keeps-this-token-outside-the-database")
+    set_passphrase("forgotten passphrase")
+    with TestClient(app, backend_options={"use_uvloop": True}) as client:
+        assert client.get("/api/v1/admin/setup-status").json() == {
+            "needs_setup": False, "recovery_available": True,
+        }
+        denied = client.post("/api/v1/admin/recover", json={
+            "recovery_token": "wrong-token", "new_passphrase": "replacement passphrase",
+        })
+        assert denied.status_code == 401
+        recovered = client.post("/api/v1/admin/recover", json={
+            "recovery_token": "render-keeps-this-token-outside-the-database",
+            "new_passphrase": "replacement passphrase",
+        })
+        assert recovered.status_code == 200 and recovered.json()["csrf_token"]
+        assert client.get("/api/v1/admin/me").json() == {"admin": True}
+        assert client.post("/api/v1/admin/login", json={"passphrase": "forgotten passphrase"}).status_code == 401
+        assert client.post("/api/v1/admin/login", json={"passphrase": "replacement passphrase"}).status_code == 200
+
+
+def test_code_preview_reads_source_text_without_overwriting_saved_content(monkeypatch):
+    db.set_content("card", {"name": "Saved owner name", "role": "Saved owner role"})
+    monkeypatch.setenv("PORTFOLIO_CONTENT_SOURCE", "code")
+    with TestClient(app, backend_options={"use_uvloop": True}) as client:
+        assert 'data-content-source="code"' in client.get("/").text
+        posts = client.get("/api/v1/posts").json()["items"]
+        sample = seed.POSTS[0]
+        assert next(post for post in posts if post["slug"] == sample["slug"])["title"] == sample["title"]
+        assert client.get(f'/api/v1/posts/{sample["slug"]}').json()["body_md"] == sample["body_md"]
+    assert db.get_content("card")["name"] == "Saved owner name"
 
 
 def test_strict_csp_local_assets_and_ssr_metadata_on_every_deep_route():

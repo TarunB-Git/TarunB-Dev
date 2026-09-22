@@ -158,33 +158,27 @@ test('consented business-card flips are counted in public analytics', async ({ p
   expect(Number((await page.locator('#st-card-flips').innerText()).replace(/\D/g, ''))).toBeGreaterThan(0);
 });
 
-test('first visit offers Cloud and Device, then defaults to Device after ten seconds', async ({ page }) => {
+test('first visit opens Device and keeps the Cloud switch available', async ({ page }) => {
   await page.goto('/');
   await waitForApp(page);
-  const chooser = page.locator('#entry-choice');
-  await expect(chooser).toBeVisible();
-  await expect(chooser.getByRole('button', { name: 'Cloud' })).toBeVisible();
-  await expect(chooser.getByRole('button', { name: 'Device' })).toBeVisible();
-  await expect(chooser.locator('.entry-choice-world img')).toBeVisible();
-  await expect(chooser.locator('.entry-choice-directory img')).toBeVisible();
-  await expect(chooser.locator('.entry-choice-world img')).toHaveAttribute('src', /assets\/ui\/cloud\.png$/);
-  await expect(chooser.locator('.entry-choice-directory img')).toHaveAttribute('src', /assets\/ui\/device\.png$/);
-  await expect(page.locator('#entry-choice-time')).toContainText('Device opens in 10');
-  await expect(page).toHaveURL('/?shell=directory', { timeout: 12_000 });
-  await expect(chooser).toBeHidden();
-  await expect(page.locator('#experience-switch')).toHaveClass(/\bmode-confirmation\b/);
+  await expect(page.locator('#s-directory')).not.toHaveClass(/\bout\b/);
   await expect(page.locator('#experience-switch [data-shell-mode="directory"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#experience-switch [data-shell-mode="world"]')).toBeVisible();
 });
 
 test('directory contacts and cloud-world movement remain available', async ({ page }) => {
   await page.goto('/');
   await waitForApp(page);
-  await page.locator('[data-entry-mode="directory"]').focus();
-  await page.keyboard.press('Enter');
   await chooseNecessaryOnly(page);
   await expect(page.locator('#s-directory')).not.toHaveClass(/\bout\b/);
-  await expect(page.locator('.directory-file')).toHaveCount(7);
-  await expect(page.locator('.directory-file')).toContainText(['Work & Résumé', 'About Me', 'Library & Notes', 'Legal & Credits.txt', 'Email', 'Call', 'WhatsApp']);
+  await expect(page.locator('.directory-file')).toHaveCount(8);
+  await expect(page.locator('.directory-file')).toContainText(['Work & Résumé', 'About Me', 'Library & Notes', 'Blogs', 'Legal & Credits.txt', 'Email', 'Call', 'WhatsApp']);
+  await page.locator('.directory-file').filter({ hasText: 'Blogs' }).click();
+  await expect(page.locator('.directory-blog-frame')).toBeVisible();
+  await expect(page.locator('.directory-blog-frame')).toHaveAttribute('src', /\/blogs\?embed=1/);
+  await expect(page).toHaveURL('/');
+  await page.locator('[data-document-action="close"]').click();
+  await expect(page.locator('#directory-document-window')).toBeHidden();
   await page.locator('[data-window-action="minimize"]').click();
   await expect(page.locator('#directory-window')).toHaveClass(/\bis-minimized\b/);
   await page.locator('[data-directory-action="restore"]').click();
@@ -213,11 +207,12 @@ test('mobile Device keeps desktop shortcuts and opens paths without a document r
   });
   await page.goto('/?shell=directory');
   await waitForApp(page);
+  await expect(page.locator('#directory-window')).toHaveClass(/\bis-maximized\b/);
   documentNavigations = 0;
   await page.locator('[data-window-action="close"]').click();
   await expect(page.locator('#directory-window')).toHaveClass(/\bis-closed\b/);
   const shortcuts = page.locator('#directory-desktop-icons .desktop-shortcut');
-  await expect(shortcuts).toHaveCount(9);
+  await expect(shortcuts).toHaveCount(10);
   const firstShortcut = await shortcuts.first().boundingBox();
   expect(firstShortcut?.y).toBeGreaterThanOrEqual(40);
   expect(firstShortcut?.y).toBeLessThan(250);
@@ -230,6 +225,14 @@ test('mobile Device keeps desktop shortcuts and opens paths without a document r
   expect(appBox?.width).toBe(390);
   expect(appBox?.height).toBe(813);
   expect(documentNavigations).toBe(0);
+  await page.locator('[data-app-action="maximize"]').click();
+  await expect(page.locator('#directory-app-window')).not.toHaveClass(/\bis-maximized\b/);
+  await expect(page.locator('#directory-app-window > .directory-resize-handle')).toBeVisible();
+  const restoredBox = await page.locator('#directory-app-window').boundingBox();
+  expect(restoredBox?.x).toBe(10);
+  expect(restoredBox?.y).toBe(72);
+  expect(restoredBox?.width).toBe(370);
+  await page.locator('[data-app-action="maximize"]').click();
   await page.locator('[data-app-action="minimize"]').click();
   await expect(page.locator('#directory-app-window')).toHaveClass(/\bis-minimized\b/);
   await expect(page.locator('#directory-dock-path')).toBeVisible();
@@ -339,16 +342,15 @@ test('desktop timeline has period pills, scrubber, overview, and deep-linked det
   await expect.poll(() => page.locator('#view-wrap').evaluate(node => node.scrollTop)).toBeGreaterThan(100);
 
   await page.locator('#view-timeline .tl-dialog-links a').click();
-  await expect(page).toHaveURL('/blog/linked-story?from=viewer&returnEvent=current-course');
-  await expect(page.locator('#blog-dialog-title')).toHaveText('A linked timeline story');
-  await page.reload();
-  await waitForApp(page);
-  await expect(page.locator('#ps-viewer')).toHaveClass(/\bon\b/);
-  await expect(page.locator('#blog-dialog-title')).toHaveText('A linked timeline story');
-  await page.locator('#blog-close').click();
-  await expect(page).toHaveURL('/viewer?event=current-course');
-  await expect(page.locator('#view-timeline .tl-dialog')).toHaveAttribute('open', '');
-  await expect(page.locator('#view-timeline .tl-dialog')).toContainText('Clarity, care, and curiosity');
+  await expect.poll(() => new URL(page.url()).searchParams.get('shell')).toBe('directory');
+  expect(new URL(page.url()).pathname).toBe('/viewer');
+  const journal = page.frameLocator('.directory-blog-frame');
+  await expect(journal.locator('.post-title')).toHaveText('A linked timeline story');
+  const journalFrame = page.frames().find(frame => frame.url().includes('/blog/linked-story'));
+  expect(journalFrame).toBeTruthy();
+  await journalFrame.goto(journalFrame.url());
+  await expect(journal.locator('.post-title')).toHaveText('A linked timeline story');
+  await expect(journal.getByRole('link', { name: /All writing/i })).toHaveAttribute('href', '/blogs?embed=1');
 });
 
 test('mobile timeline is vertical, touch-usable, and has no sideways-only content', async ({ browser, baseURL }) => {
@@ -396,7 +398,7 @@ test('tagged path writing exposes every cursor page', async ({ page }) => {
   expect(requests).toEqual(['', 'page-2']);
 });
 
-test('blog deep links restore the personal path and exact post after refresh', async ({ page }) => {
+test('blog deep links render standalone searchable post pages after refresh', async ({ page }) => {
   const login = await page.request.post('/api/v1/admin/login', {
     data: { passphrase: 'local-e2e-passphrase-only' },
   });
@@ -407,51 +409,41 @@ test('blog deep links restore the personal path and exact post after refresh', a
     data: {
       slug: 'path-story', title: 'A path story',
       body_md: '## A remembered turn\n\nThe exact post survives a refresh.',
-      excerpt: 'A remembered turn.', tags: ['viewer', 'recruiter'], published: true,
+      excerpt: 'A remembered turn.', tags: ['viewer', 'recruiter'], primary_tag: 'work',
+      secondary_tags: ['testing'], series: 'Portfolio engineering', published: true,
     },
   });
   expect(created.ok()).toBe(true);
   await page.goto('/blog/path-story');
-  await waitForApp(page);
-  await chooseNecessaryOnly(page);
-  await expect(page.locator('#ps-personal')).toHaveClass(/\bon\b/);
-  await expect(page.locator('#blog-mo')).toHaveClass(/\bopen\b/);
-  await expect(page.locator('#blog-dialog-title')).toHaveText('A path story');
-  await page.locator('.bp-like').click();
-  await expect(page.locator('.bp-like')).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('.react[data-emoji="🔥"]').click();
-  await expect(page.locator('.react[data-emoji="🔥"]')).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('.bp-cform .bc-name').fill('Reader');
-  await page.locator('.bp-cform .bc-body').fill('A useful thread starter.');
-  await page.locator('.bp-cform').evaluate(form => form.requestSubmit());
-  await expect(page.locator('.bcomment')).toContainText('A useful thread starter.');
+  await expect(page.locator('.post-title')).toHaveText('A path story');
+  await expect(page.locator('.post-body h3')).toHaveText('A remembered turn');
+  await page.locator('.comment-form [name="name"]').fill('Reader');
+  await page.locator('.comment-form [name="body"]').fill('A useful thread starter.');
+  await page.locator('.comment-form').evaluate(form => form.requestSubmit());
+  await expect(page.locator('.comment')).toContainText('A useful thread starter.');
   await page.reload();
-  await waitForApp(page);
-  await expect(page.locator('#blog-dialog-title')).toHaveText('A path story');
-  await page.locator('#blog-close').click();
-  await expect(page).toHaveURL('/personal');
+  await expect(page.locator('.post-title')).toHaveText('A path story');
+
+  await page.goto('/blogs');
+  await page.locator('.archive-search').fill('testing');
+  await expect(page.locator('.archive-card').filter({ hasText: 'A path story' })).toBeVisible();
+  await page.locator('[data-tag="work"]').click();
+  await expect(page.locator('.archive-card').filter({ hasText: 'A path story' })).toBeVisible();
 
   await page.goto('/viewer');
   await waitForApp(page);
   await page.locator('#view-posts .blog-row').filter({ hasText: 'A path story' }).click();
-  await expect(page).toHaveURL('/blog/path-story?from=viewer');
-  await page.reload();
-  await waitForApp(page);
-  await expect(page.locator('#ps-viewer')).toHaveClass(/\bon\b/);
-  await expect(page.locator('#blog-dialog-title')).toHaveText('A path story');
-  await page.locator('#blog-close').click();
-  await expect(page).toHaveURL('/viewer');
+  await expect(page).toHaveURL('/viewer?shell=directory');
+  await expect(page.locator('.directory-blog-frame')).toHaveAttribute('src', /\/blog\/path-story\?embed=1/);
+  await expect(page.frameLocator('.directory-blog-frame').locator('.post-title')).toHaveText('A path story');
 
   await page.goto('/recruiter?mode=light');
   await waitForApp(page);
   await page.locator('#rec-posts .blog-row').filter({ hasText: 'A path story' }).click();
-  await expect(page).toHaveURL('/blog/path-story?from=recruiter&mode=light');
-  await page.reload();
-  await waitForApp(page);
-  await expect(page.locator('#ps-recruiter')).toHaveClass(/\bon\b/);
-  await expect(page.locator('body')).toHaveClass(/\brm-on\b/);
-  await page.locator('#blog-close').click();
-  await expect(page).toHaveURL('/recruiter?mode=light');
+  await expect.poll(() => new URL(page.url()).searchParams.get('shell')).toBe('directory');
+  expect(new URL(page.url()).pathname).toBe('/recruiter');
+  expect(new URL(page.url()).searchParams.get('mode')).toBe('light');
+  await expect(page.frameLocator('.directory-blog-frame').locator('.post-title')).toHaveText('A path story');
 });
 
 test('message forms are private by default and transmit explicit wall consent separately', async ({ page }) => {
@@ -659,11 +651,13 @@ test('admin is unlinked/noindex and exposes structured onboarding after login', 
   await page.locator('#p-card [data-field="name"]').fill('E2E Owner');
   await page.locator('#p-card [data-field="role"]').fill('Test Engineer');
   await page.locator('#p-card [data-field="email"]').fill('owner@example.test');
-  await expect(page.locator('#p-card .content-published')).not.toBeChecked();
+  await expect(page.locator('#p-card .content-published')).toBeChecked();
+  await page.locator('#p-card .content-published').uncheck();
   await page.locator('#p-card .save').click();
   await expect(page.locator('#p-card .editor-actions .note')).toContainText('Saved as draft');
   const cardDraft = await page.evaluate(async () => (await fetch('/api/v1/content/card')).json());
   expect(cardDraft).toMatchObject({ published: false, data: { name: 'E2E Owner', role: 'Test Engineer' } });
+  expect(cardDraft.data.selected_work.length).toBeGreaterThan(0);
   await page.locator('nav button[data-p="timelines"]').click();
   await expect(page.locator('#p-timelines')).toContainText('recruiter timeline');
 });

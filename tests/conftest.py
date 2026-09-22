@@ -18,6 +18,7 @@ def isolated_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PORTFOLIO_BACKUP_DIR", str(data / "backups"))
     monkeypatch.setenv("PORTFOLIO_BASE_URL", "http://testserver")
     monkeypatch.setenv("PORTFOLIO_SECURE_COOKIES", "false")
+    monkeypatch.delenv("ADMIN_RECOVERY_TOKEN", raising=False)
     from server import db
     db.init_db()
     yield data

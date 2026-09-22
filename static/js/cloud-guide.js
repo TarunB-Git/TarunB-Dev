@@ -1,6 +1,17 @@
 /* One quest-style 3D compass; no minimap or destination selector. */
 import * as THREE from 'three';
 const NAMES = { viewer: 'The ship', personal: 'The scroll', recruiter: 'The birds', friend: 'The moon' };
+
+export function guideDirection(delta, yaw) {
+  const cameraRight = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const cameraForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  return new THREE.Vector3(
+    delta.dot(cameraRight),
+    delta.y,
+    -delta.dot(cameraForward),
+  ).normalize();
+}
+
 export function createCloudGuide(root) {
   const panel = document.createElement('aside');
   panel.id = 'cloud-guide';
@@ -43,16 +54,10 @@ export function createCloudGuide(root) {
       visible = true; panel.hidden = false;
 
       const delta = new THREE.Vector3().subVectors(target, player);
-      const cameraRight = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-      const cameraForward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      // HUD X/Y carry the camera-relative ground direction while HUD Z carries
-      // the real elevation. This rotates the 3D mesh toward the full spatial
-      // target instead of applying a flat compass bearing with a cosmetic tilt.
-      const direction = new THREE.Vector3(
-        delta.dot(cameraRight),
-        delta.dot(cameraForward),
-        delta.y,
-      ).normalize();
+      // HUD X is lateral movement, HUD Y is real elevation, and HUD Z is
+      // forward/back depth. The arrow therefore points into or out of the
+      // screen instead of misrepresenting those directions as up and down.
+      const direction = guideDirection(delta, yaw);
       arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
       panel.querySelector('strong').textContent = record ? NAMES[record.id] : 'Central opening';
       panel.querySelector('p').textContent = record

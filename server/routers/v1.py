@@ -6,7 +6,6 @@ import hashlib
 import json
 import mimetypes
 import secrets
-import sqlite3
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -14,10 +13,10 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 
-from .. import config, db
+from .. import config, db, seed
 from ..auth import (
     create_session, csrf_token, destroy_session, is_admin, rate_limit,
-    initialize_passphrase, reject_honeypot, require_admin, require_admin_write, set_passphrase,
+    initialize_passphrase, recover_passphrase, reject_honeypot, require_admin, require_admin_write, set_passphrase,
     validate_same_origin, verify_passphrase,
 )
 from ..models import (
@@ -31,6 +30,7 @@ from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/v1")
 PATHS = {"recruiter", "viewer", "friend", "personal"}
+BLOG_PRIMARY_TAGS = {"work", "thoughts", "dreams", "friends", "travel", "life"}
 ANALYTICS_COOKIE = "portfolio_analytics_session"
 ANALYTICS_SESSION_MAX_AGE = 30 * 60
 CONTENT_KEYS = {
@@ -51,6 +51,11 @@ class LoginIn(BaseModel):
 class PassphraseChangeIn(BaseModel):
     current_passphrase: str = Field(min_length=1)
     new_passphrase: str = Field(min_length=1)
+
+
+class PassphraseRecoveryIn(BaseModel):
+    recovery_token: str = Field(min_length=1, max_length=512)
+    new_passphrase: str = Field(min_length=1, max_length=200)
 
 
 def _path(value: str) -> str:
@@ -154,7 +159,7 @@ def create_period(path: str, body: TimelinePeriodIn):
                 "INSERT INTO timeline_periods(path,label,slug,sort_order,published,updated_at) VALUES(?,?,?,?,?,?)",
                 (path, body.label, slug, body.sort_order, int(body.published), db.utcnow()),
             )
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise HTTPException(409, "period slug already exists") from exc
         period_id = cur.lastrowid
         _revision(con, "timeline_period", {**body.model_dump(), "path": path, "slug": slug}, entity_id=period_id)
@@ -175,7 +180,7 @@ def update_period(period_id: int, body: TimelinePeriodIn):
                 (body.label, slug, body.sort_order, int(body.published), db.utcnow(), period_id),
             )
             con.execute("UPDATE timeline_events SET year_label=? WHERE period_id=?", (body.label, period_id))
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise HTTPException(409, "period slug already exists") from exc
     return {"ok": True, "slug": slug}
 
@@ -205,7 +210,7 @@ def _event_values(body: TimelineEventIn, *, path: str, period_id: int, year_labe
     )
 
 
-def _validate_event_relations(con: sqlite3.Connection, body: TimelineEventIn) -> None:
+def _validate_event_relations(con, body: TimelineEventIn) -> None:
     if body.media_id and not con.execute("SELECT 1 FROM media_assets WHERE id=?", (body.media_id,)).fetchone():
         raise HTTPException(400, "unknown media asset")
     for link in body.links:
@@ -234,7 +239,7 @@ def create_event(period_id: int, body: TimelineEventIn):
                     links_json,published,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 _event_values(body, path=period["path"], period_id=period_id, year_label=period["label"], slug=slug),
             )
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise HTTPException(409, "event slug already exists in this path") from exc
         event_id = cur.lastrowid
         _revision(con, "timeline_event", {**body.model_dump(mode="json"), "period_id": period_id}, entity_id=event_id)
@@ -258,7 +263,7 @@ def update_event(event_id: int, body: TimelineEventIn):
                 path=?,period_id=?,year_label=?,slug=?,category=?,sort_order=?,title=?,subtitle=?,
                 description=?,summary=?,details=?,details_md=?,layout=?,accent=?,media_id=?,alt_text=?,
                 links_json=?,published=?,updated_at=? WHERE id=?""", (*values, event_id))
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise HTTPException(409, "event slug already exists in this path") from exc
     return {"ok": True, "slug": slug}
 
@@ -346,14 +351,9 @@ def write_content(key: str, body: ContentWrite):
     except ValueError as exc:
         raise HTTPException(422, f"invalid {key} content: {exc}") from exc
     version = db.set_content(key, body.data, published=body.published, note=body.note)
-    if key == "resume":
-        from ..resume import cached_pdf, invalidate_cache
-        invalidate_cache()
-        if body.published and isinstance(body.data, dict):
-            try:
-                cached_pdf(body.data)
-            except OSError:
-                pass  # /resume.pdf will use the in-memory generator on read-only storage
+    if key == "resume" and body.published and isinstance(body.data, dict):
+        from ..resume import build_pdf
+        build_pdf(body.data)  # validate generation without creating a dyno-local cache
     if key == "legal" and body.published and isinstance(body.data, dict):
         _publish_legal_settings(body.data)
     return {"ok": True, "version": version, "published": body.published}
@@ -401,14 +401,9 @@ def restore_revision(revision_id: int):
         )
         if key == "legal" and restored_published and isinstance(restored_data, dict):
             _publish_legal_settings(restored_data)
-        if key == "resume":
-            from ..resume import cached_pdf, invalidate_cache
-            invalidate_cache()
-            if restored_published and isinstance(restored_data, dict):
-                try:
-                    cached_pdf(restored_data)
-                except OSError:
-                    pass
+        if key == "resume" and restored_published and isinstance(restored_data, dict):
+            from ..resume import build_pdf
+            build_pdf(restored_data)
         return {"ok": True, "version": version}
     entity_type = revision["entity_type"]
     entity_id = revision["entity_id"]
@@ -492,19 +487,25 @@ def restore_revision(revision_id: int):
                     "body_md": payload.get("body_md") or "",
                     "excerpt": payload.get("excerpt") or "",
                     "tags": raw_tags,
+                    "primary_tag": payload.get("primary_tag") or "thoughts",
+                    "secondary_tags": json.loads(payload.get("secondary_tags_json") or "[]") if "secondary_tags_json" in payload else payload.get("secondary_tags", []),
+                    "series": payload.get("series") or "",
+                    "created_at": payload.get("created_at"),
                     "published": bool(payload.get("published", False)),
                 })
-                con.execute("""INSERT INTO blog_posts(id,slug,title,body_md,excerpt,tags_json,created_at,updated_at,published)
-                    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,
+                con.execute("""INSERT INTO blog_posts(id,slug,title,body_md,excerpt,tags_json,primary_tag,secondary_tags_json,series,created_at,updated_at,published)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,
                     body_md=excluded.body_md,excerpt=excluded.excerpt,tags_json=excluded.tags_json,
-                    updated_at=excluded.updated_at,published=excluded.published""",
+                    primary_tag=excluded.primary_tag,secondary_tags_json=excluded.secondary_tags_json,series=excluded.series,
+                    created_at=excluded.created_at,updated_at=excluded.updated_at,published=excluded.published""",
                     (
                         entity_id, post_data.slug, post_data.title, post_data.body_md,
-                        post_data.excerpt, json.dumps(post_data.tags),
-                        payload.get("created_at") or db.utcnow(), db.utcnow(), int(post_data.published),
+                        post_data.excerpt, json.dumps(post_data.tags), post_data.primary_tag,
+                        json.dumps(post_data.secondary_tags), post_data.series,
+                        _post_time(post_data.created_at), db.utcnow(), int(post_data.published),
                     ),
                 )
-    except sqlite3.IntegrityError as exc:
+    except db.IntegrityError as exc:
         raise HTTPException(409, "the revision conflicts with a current slug or relationship") from exc
     except ValueError as exc:
         raise HTTPException(422, f"revision no longer satisfies the current schema: {exc}") from exc
@@ -539,15 +540,43 @@ async def upload_resume_pdf(file: UploadFile = File(...)):
         raise HTTPException(415, "Choose a PDF document, not a renamed file")
     # Immutable filenames make replacement atomic for concurrent downloads.
     stored_name = f"resume-{hashlib.sha256(body).hexdigest()[:24]}-{secrets.token_hex(4)}.pdf"
-    target = config.upload_dir() / stored_name
-    target.write_bytes(body)
-    metadata = {"stored_name": stored_name, "original_name": Path(file.filename or "resume.pdf").name[:180], "byte_size": len(body)}
-    db.set_content("resume_pdf", metadata, note="Replaced downloadable resume PDF")
+    original_name = Path(file.filename or "resume.pdf").name[:180]
+    current = db.get_content("resume_pdf", include_draft=True)
+    try:
+        db.put_blob(stored_name, body, "application/pdf", original_name=original_name)
+    except ValueError as exc:
+        raise HTTPException(507, str(exc)) from exc
+    metadata = {"stored_name": stored_name, "original_name": original_name, "byte_size": len(body)}
+    try:
+        db.set_content("resume_pdf", metadata, note="Replaced downloadable resume PDF")
+    except Exception:
+        db.delete_blob(stored_name)
+        raise
+    if isinstance(current, dict) and current.get("stored_name") != stored_name:
+        db.delete_blob(str(current.get("stored_name") or ""))
     return metadata
+
+
+@router.delete("/admin/resume-pdf", dependencies=[Depends(require_admin_write)])
+def delete_resume_pdf():
+    """Return downloads to the editable, generated résumé document."""
+    current = db.get_content("resume_pdf", include_draft=True)
+    db.set_content("resume_pdf", {}, note="Use generated resume PDF")
+    if isinstance(current, dict) and current.get("stored_name"):
+        db.delete_blob(str(current["stored_name"]))
+    return {"ok": True, "original_name": None}
 
 
 @router.get("/admin/media", dependencies=[Depends(require_admin)])
 def list_media():
+    with db.connect() as con:
+        rows = con.execute("SELECT * FROM media_assets ORDER BY created_at DESC,id DESC").fetchall()
+    return {"items": [_media_dict(row) for row in rows]}
+
+
+@router.get("/media")
+def public_media():
+    """Expose the public asset library to the Device Pictures folder."""
     with db.connect() as con:
         rows = con.execute("SELECT * FROM media_assets ORDER BY created_at DESC,id DESC").fetchall()
     return {"items": [_media_dict(row) for row in rows]}
@@ -591,22 +620,19 @@ async def upload_media(
         raise HTTPException(415, "detected image format is not supported")
     digest = hashlib.sha256(body).hexdigest()
     stored_name = f"{digest[:24]}-{secrets.token_hex(4)}{ALLOWED_MEDIA[detected]}"
-    target = (config.upload_dir() / stored_name).resolve()
-    if target.parent != config.upload_dir().resolve():
-        raise HTTPException(400, "unsafe upload name")
-    # Runtime user uploads intentionally live outside repository-tracked assets.
-    target.write_bytes(body)
     original = Path(file.filename or "upload").name[:180]
     try:
         with db.connect() as con:
+            db.put_blob(stored_name, body, detected, original_name=original, con=con)
             cur = con.execute(
                 "INSERT INTO media_assets(stored_name,original_name,mime_type,byte_size,sha256,alt_text,width,height) "
                 "VALUES(?,?,?,?,?,?,?,?)",
                 (stored_name, original, detected, len(body), digest, alt_text, width, height),
             )
             row = con.execute("SELECT * FROM media_assets WHERE id=?", (cur.lastrowid,)).fetchone()
+    except ValueError as exc:
+        raise HTTPException(507, str(exc)) from exc
     except Exception:
-        target.unlink(missing_ok=True)
         raise
     return _media_dict(row)
 
@@ -620,9 +646,7 @@ def delete_media(media_id: int):
         if con.execute("SELECT 1 FROM timeline_events WHERE media_id=?", (media_id,)).fetchone():
             raise HTTPException(409, "media is still used by a timeline event")
         con.execute("DELETE FROM media_assets WHERE id=?", (media_id,))
-    target = (config.upload_dir() / row["stored_name"]).resolve()
-    if target.parent == config.upload_dir().resolve():
-        target.unlink(missing_ok=True)
+        db.delete_blob(row["stored_name"], con=con)
     return {"ok": True}
 
 
@@ -640,14 +664,30 @@ def _post_summary(row, con, visitor: str = "") -> dict:
     ).fetchone()["c"]
     reaction_count = con.execute("SELECT COUNT(*) c FROM reactions WHERE post_id=?", (row["id"],)).fetchone()["c"]
     liked = bool(visitor and con.execute("SELECT 1 FROM likes WHERE post_id=? AND visitor_id=?", (row["id"], visitor)).fetchone())
-    return {
+    secondary_tags = json.loads(row["secondary_tags_json"] or "[]")
+    path_tags = json.loads(row["tags_json"] or "[]")
+    word_count = len(str(row["body_md"] or "").split())
+    result = {
         "id": row["id"], "slug": row["slug"], "title": row["title"],
-        "tags": json.loads(row["tags_json"] or "[]"), "created_at": row["created_at"],
+        "tags": path_tags, "path_tags": path_tags,
+        "primary_tag": row["primary_tag"] or "thoughts",
+        "secondary_tags": secondary_tags, "series": row["series"] or "",
+        "all_tags": [row["primary_tag"] or "thoughts", *secondary_tags, *path_tags],
+        "created_at": row["created_at"],
         "updated_at": row["updated_at"], "published": bool(row["published"]),
         "likes": likes, "liked": liked, "reaction_count": reaction_count,
         "comments": comments, "popularity": likes + reaction_count + 2 * comments,
         "excerpt": row["excerpt"] or row["body_md"][:220],
+        "word_count": word_count, "reading_minutes": max(1, (word_count + 199) // 200),
     }
+    if config.code_content_preview():
+        preview = next((post for post in seed.POSTS if post["slug"] == row["slug"]), None)
+        if preview:
+            result.update(
+                title=preview["title"], tags=preview["tags"],
+                excerpt=preview["body_md"].split("\n\n")[-1][:180],
+            )
+    return result
 
 
 def _encode_cursor(created_at: str, row_id: int) -> str:
@@ -677,13 +717,27 @@ def _decode_popular_cursor(cursor: str) -> tuple[int, str, int]:
         raise HTTPException(400, "invalid popularity cursor") from exc
 
 
+def _post_time(value: str | None) -> str:
+    """Validate an owner-editable publication time and store it as UTC ISO-8601."""
+    if not value:
+        return db.utcnow()
+    candidate = value.strip()
+    try:
+        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(422, "publication time must be a valid date and time") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 @router.get("/posts")
 def list_posts(
     request: Request, tag: str | None = None, sort: str = Query(default="new", pattern="^(new|popular)$"),
-    cursor: str | None = None, limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = None, limit: int = Query(default=20, ge=1, le=50), q: str | None = None,
 ):
-    if tag and tag not in PATHS:
-        raise HTTPException(400, "unknown path tag")
+    tag = (tag or "").strip().lower() or None
+    q = (q or "").strip().lower()[:120]
     admin = is_admin(request)
     params: list = []
     conditions = [] if admin else ["published=1"]
@@ -694,9 +748,15 @@ def list_posts(
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
     with db.connect() as con:
         rows = con.execute(f"SELECT * FROM blog_posts {where} ORDER BY created_at DESC,id DESC", params).fetchall()
+        if q:
+            rows = [row for row in rows if q in " ".join((
+                str(row["title"] or ""), str(row["body_md"] or ""), str(row["excerpt"] or ""),
+                str(row["primary_tag"] or ""), str(row["secondary_tags_json"] or ""),
+                str(row["tags_json"] or ""), str(row["series"] or ""),
+            )).lower()]
         posts = [_post_summary(row, con, _visitor_cookie(request)) for row in rows]
     if tag:
-        posts = [post for post in posts if tag in post["tags"]]
+        posts = [post for post in posts if tag in post["all_tags"]]
     if sort == "popular":
         posts.sort(key=lambda post: (post["popularity"], post["created_at"], post["id"]), reverse=True)
         if cursor:
@@ -721,12 +781,38 @@ def get_post(slug: str, request: Request):
             raise HTTPException(404, "no such post")
         result = _post_summary(row, con, visitor)
         result["body_md"] = row["body_md"]
+        if config.code_content_preview():
+            preview = next((post for post in seed.POSTS if post["slug"] == slug), None)
+            if preview:
+                result["body_md"] = preview["body_md"]
         counts = con.execute(
             "SELECT emoji,COUNT(*) count FROM reactions WHERE post_id=? GROUP BY emoji", (row["id"],),
         ).fetchall()
         mine = con.execute(
             "SELECT emoji FROM reactions WHERE post_id=? AND visitor_id=?", (row["id"], visitor),
         ).fetchall() if visitor else []
+        visible = "" if is_admin(request) else "AND published=1"
+        neighbors = con.execute(
+            f"SELECT * FROM blog_posts WHERE id!=? {visible} ORDER BY created_at DESC,id DESC", (row["id"],),
+        ).fetchall()
+        summaries = [_post_summary(item, con, visitor) for item in neighbors]
+        ordered = [*summaries, result]
+        ordered.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+        current_index = next(index for index, item in enumerate(ordered) if item["id"] == result["id"])
+        result["newer"] = ordered[current_index - 1] if current_index > 0 else None
+        result["older"] = ordered[current_index + 1] if current_index + 1 < len(ordered) else None
+        related = [item for item in summaries if (
+            (result["series"] and item["series"] == result["series"])
+            or item["primary_tag"] == result["primary_tag"]
+            or set(item["secondary_tags"]) & set(result["secondary_tags"])
+        )]
+        related.sort(key=lambda item: (
+            bool(result["series"] and item["series"] == result["series"]),
+            len(set(item["secondary_tags"]) & set(result["secondary_tags"])),
+            item["created_at"],
+        ), reverse=True)
+        result["related"] = related[:4]
+        result["recent"] = summaries[:5]
     result["reactions"] = {item["emoji"]: item["count"] for item in counts}
     result["my_reactions"] = [item["emoji"] for item in mine]
     return result
@@ -734,13 +820,15 @@ def get_post(slug: str, request: Request):
 
 @router.post("/admin/posts", dependencies=[Depends(require_admin_write)], status_code=201)
 def create_post(body: PostIn):
+    created_at = _post_time(body.created_at)
     with db.connect() as con:
         try:
             cur = con.execute(
-                "INSERT INTO blog_posts(slug,title,body_md,excerpt,tags_json,published,updated_at) VALUES(?,?,?,?,?,?,?)",
-                (body.slug, body.title, body.body_md, body.excerpt, json.dumps(body.tags), int(body.published), db.utcnow()),
+                "INSERT INTO blog_posts(slug,title,body_md,excerpt,tags_json,primary_tag,secondary_tags_json,series,published,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (body.slug, body.title, body.body_md, body.excerpt, json.dumps(body.tags), body.primary_tag,
+                 json.dumps(body.secondary_tags), body.series, int(body.published), created_at, db.utcnow()),
             )
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise HTTPException(409, "post slug already exists") from exc
         _revision(con, "blog_post", body.model_dump(mode="json"), entity_id=cur.lastrowid)
     return {"id": cur.lastrowid}
@@ -752,13 +840,15 @@ def update_post(post_id: int, body: PostIn):
         old = con.execute("SELECT * FROM blog_posts WHERE id=?", (post_id,)).fetchone()
         if not old:
             raise HTTPException(404, "no such post")
+        created_at = _post_time(body.created_at) if body.created_at else old["created_at"]
         _revision(con, "blog_post", dict(old), entity_id=post_id, note="before update")
         try:
             con.execute(
-                "UPDATE blog_posts SET slug=?,title=?,body_md=?,excerpt=?,tags_json=?,published=?,updated_at=? WHERE id=?",
-                (body.slug, body.title, body.body_md, body.excerpt, json.dumps(body.tags), int(body.published), db.utcnow(), post_id),
+                "UPDATE blog_posts SET slug=?,title=?,body_md=?,excerpt=?,tags_json=?,primary_tag=?,secondary_tags_json=?,series=?,published=?,created_at=?,updated_at=? WHERE id=?",
+                (body.slug, body.title, body.body_md, body.excerpt, json.dumps(body.tags), body.primary_tag,
+                 json.dumps(body.secondary_tags), body.series, int(body.published), created_at, db.utcnow(), post_id),
             )
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise HTTPException(409, "post slug already exists") from exc
     return {"ok": True}
 
@@ -1042,7 +1132,7 @@ def stats_event(
             )
             con.execute(
                 """INSERT INTO daily_stats(day,event_type,path,source,count) VALUES(?,?,?,?,1)
-                    ON CONFLICT(day,event_type,path,source) DO UPDATE SET count=count+1""",
+                    ON CONFLICT(day,event_type,path,source) DO UPDATE SET count=daily_stats.count+1""",
                 (day, body.type, body.path, source),
             )
             if body.type == "view":
@@ -1054,10 +1144,10 @@ def stats_event(
                 }
                 con.executemany(
                     """INSERT INTO daily_audience(day,dimension,value,count) VALUES(?,?,?,1)
-                        ON CONFLICT(day,dimension,value) DO UPDATE SET count=count+1""",
+                        ON CONFLICT(day,dimension,value) DO UPDATE SET count=daily_audience.count+1""",
                     ((day, dimension, value) for dimension, value in audience.items()),
                 )
-    except sqlite3.IntegrityError:
+    except db.IntegrityError:
         return {"ok": True, "deduplicated": True}
     return {"ok": True, "deduplicated": False}
 
@@ -1125,12 +1215,13 @@ def admin_stats():
                       (SELECT COUNT(*) FROM blog_posts WHERE published=1) published_posts"""
         ).fetchone())
         posts = [dict(row) for row in con.execute(
-            """SELECT p.title,p.slug,
-                      (SELECT COUNT(*) FROM likes l WHERE l.post_id=p.id) likes,
-                      (SELECT COUNT(*) FROM reactions r WHERE r.post_id=p.id) reactions,
-                      (SELECT COUNT(*) FROM comments c WHERE c.post_id=p.id AND c.hidden=0 AND c.moderation_status='visible') comments
-               FROM blog_posts p WHERE p.published=1
-               ORDER BY (likes+reactions+comments) DESC,p.created_at DESC LIMIT 12"""
+            """SELECT title,slug,likes,reactions,comments FROM (
+                    SELECT p.title,p.slug,p.created_at,
+                           (SELECT COUNT(*) FROM likes l WHERE l.post_id=p.id) likes,
+                           (SELECT COUNT(*) FROM reactions r WHERE r.post_id=p.id) reactions,
+                           (SELECT COUNT(*) FROM comments c WHERE c.post_id=p.id AND c.hidden=0 AND c.moderation_status='visible') comments
+                    FROM blog_posts p WHERE p.published=1
+               ) ranked ORDER BY (likes+reactions+comments) DESC,created_at DESC LIMIT 12"""
         )]
     return {
         **_public_stats(), "raw_events_retained": raw,
@@ -1143,7 +1234,10 @@ def admin_stats():
 
 @router.get("/admin/setup-status")
 def admin_setup_status():
-    return {"needs_setup": not bool(db.get_setting("passphrase_hash"))}
+    return {
+        "needs_setup": not bool(db.get_setting("passphrase_hash")),
+        "recovery_available": bool(config.admin_recovery_token()),
+    }
 
 
 @router.post("/admin/setup")
@@ -1161,6 +1255,16 @@ def admin_login(body: LoginIn, request: Request, response: Response):
     rate_limit(request, "admin-login", limit=5, window=300)
     if not verify_passphrase(body.passphrase):
         raise HTTPException(401, "wrong passphrase")
+    token = create_session(response)
+    return {"ok": True, "csrf_token": token}
+
+
+@router.post("/admin/recover")
+def admin_recover(body: PassphraseRecoveryIn, request: Request, response: Response):
+    validate_same_origin(request)
+    rate_limit(request, "admin-recover", limit=5, window=900)
+    if not recover_passphrase(body.recovery_token, body.new_passphrase):
+        raise HTTPException(401, "recovery credentials are incorrect")
     token = create_session(response)
     return {"ok": True, "csrf_token": token}
 
@@ -1306,11 +1410,10 @@ def launch_readiness():
         infrastructure.append("model_attribution")
     if isinstance(resume_data, dict) and "resume" not in missing_content:
         try:
-            from ..resume import cached_pdf
-            pdf = cached_pdf(resume_data)
-            if not pdf.is_file() or not pdf.read_bytes().startswith(b"%PDF-"):
+            from ..resume import build_pdf
+            if not build_pdf(resume_data).startswith(b"%PDF-"):
                 infrastructure.append("resume_pdf")
-        except OSError:
+        except (OSError, ValueError):
             infrastructure.append("resume_pdf")
     ready = not missing_legal and not missing_content and not missing_timelines and not infrastructure
     issues = [
@@ -1365,6 +1468,14 @@ def export_content():
 
 @router.post("/admin/backup", dependencies=[Depends(require_admin_write)])
 def create_backup():
+    if db.is_postgres():
+        detail = {"provider": "heroku-postgres", "command": "heroku pg:backups:capture"}
+        with db.connect() as con:
+            con.execute("INSERT INTO operational_runs(command,detail) VALUES('backup-requested',?)", (json.dumps(detail),))
+        return {
+            "ok": True, "provider": "heroku-postgres",
+            "message": "Capture the managed backup with `heroku pg:backups:capture --app YOUR_APP`.",
+        }
     target = db.backup_database()
     with db.connect() as con:
         con.execute("INSERT INTO operational_runs(command,detail) VALUES('backup',?)", (json.dumps({"filename": target.name}),))

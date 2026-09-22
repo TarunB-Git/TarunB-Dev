@@ -15,12 +15,15 @@ from .legal import attribution_manifest
 
 def migrate() -> None:
     target = config.database_path()
-    previous = db.schema_version() if target.exists() else 0
+    previous = db.schema_version()
     latest = db.MIGRATIONS[-1][0]
-    if target.exists() and previous < latest:
+    if db.is_sqlite() and target.exists() and previous < latest:
         backup = db.backup_database()
         print(f"pre-migration backup: {backup}")
     db.init_db()
+    copied = db.backfill_local_blobs()
+    if copied:
+        print(f"legacy uploads copied into database: {copied}")
     print(f"schema version: {db.schema_version()}")
 
 

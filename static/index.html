@@ -3,13 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script>
-// Keep the same composed canvas on phones that browsers use for "Desktop site".
-// Touch targets are sized in CSS; scaling the entire HUD creates visual clutter.
-if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
-  document.querySelector('meta[name="viewport"]').content = 'width=980';
-}
-</script>
 <title>Choose Your Path</title>
 <meta name="description" content="An interactive four-path portfolio: recruiter, friend, curious viewer, or personal.">
 <meta name="theme-color" content="#03050c">
@@ -61,7 +54,7 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
   </nav>
   <section class="directory-document-window" id="directory-document-window" hidden aria-label="Document viewer"><header class="directory-titlebar" id="document-titlebar"><strong id="document-window-title">Document</strong><div class="directory-window-controls"><button type="button" data-document-action="minimize" aria-label="Minimize document">−</button><button type="button" data-document-action="maximize" aria-label="Toggle document full screen">□</button><button class="window-close" type="button" data-document-action="close" aria-label="Close document">×</button></div></header><article id="directory-document-content" tabindex="0"></article></section>
   <section class="directory-overview" id="directory-overview" hidden aria-label="Activities overview"><button type="button" class="overview-workspace" data-directory-action="focus-files"><span>Files</span><i>Portfolio folders</i></button><button type="button" class="overview-workspace overview-world" data-directory-action="open-world"><span>Cloud</span><i>Enter the cloud</i></button></section>
-  <aside class="directory-calendar" id="directory-calendar" hidden aria-label="Calendar"><header><strong id="calendar-month"></strong><span>Europe/Stockholm</span></header><div id="calendar-grid"></div><a id="directory-book-call" href="/recruiter#contact">Book a call</a></aside>
+  <aside class="directory-calendar" id="directory-calendar" hidden aria-label="Calendar"><header><strong id="calendar-month"></strong><span>Europe/Stockholm</span></header><div id="calendar-grid"></div><a id="directory-book-call" hidden>Book a call</a></aside>
 </main>
 
 <section class="webgl-notice" id="webgl-notice" role="status" aria-labelledby="webgl-notice-title" hidden>
@@ -158,13 +151,14 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
                   <div class="cbs">
                     <button class="ib" type="button" data-action="copy-phone" title="Copy phone" aria-label="Copy phone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
                     <button class="ib" type="button" data-action="download-vcard" title="Save contact" aria-label="Save contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+                    <a class="ib" id="card-whatsapp" title="Message on WhatsApp" aria-label="Message on WhatsApp" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 3.5A11.8 11.8 0 0 0 12.1 0C5.6 0 .3 5.3.3 11.8c0 2.1.6 4.1 1.6 5.9L.2 24l6.4-1.7a11.8 11.8 0 0 0 5.5 1.4h.1c6.5 0 11.8-5.3 11.8-11.8 0-3.2-1.2-6.1-3.5-8.4Zm-8.4 18.2c-1.7 0-3.4-.5-4.9-1.3l-.4-.2-3.8 1 1-3.7-.2-.4a9.7 9.7 0 1 1 8.3 4.6Zm5.3-7.3c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.2-.2.3-.8.9-1 1.1-.2.2-.4.2-.7.1-2-.9-3.3-1.7-4.6-4-.3-.6.3-.6.9-1.4.1-.2.1-.4 0-.6l-.9-2.1c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.3 1.4 3.6c.2.2 2.4 3.7 5.9 5.2 2.2.9 3.1 1 4.2.8.7-.1 1.7-.7 1.9-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3Z"/></svg></a>
                   </div>
                 </div>
               </div>
               <div class="acts">
                 <button class="ab gd" type="button" data-action="open-resume">Resume ↗</button>
                 <button class="ab" type="button" data-action="open-share">Share</button>
-                <a class="ab" id="cal-btn" href="#" target="_blank" rel="noopener noreferrer">Book a Chat</a>
+                <a class="ab" id="cal-btn" hidden>Book a Chat</a>
                 <button class="fhint" id="fhint" type="button" aria-label="Show the back of the business card">flip →</button>
               </div>
             </div>
@@ -241,7 +235,7 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
     <div class="mini-acts">
       <div class="profile-links" id="mini-socials" aria-label="Social profiles"></div>
       <a class="mab gd" href="/resume" data-action="open-resume">Resume</a>
-      <a class="mab" id="mini-cal" href="#" target="_blank">Book Chat</a>
+      <a class="mab" id="mini-cal" hidden>Book Chat</a>
     </div>
   </div>
  </div>
@@ -301,9 +295,9 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
     <div class="frnd-phase hide" id="frnd-content-panel" hidden aria-hidden="true" inert>
       <div class="path-relic lunar-relic" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="frnd-c-header">
-        <div class="gate-text">The moon keeps the stories.</div>
+        <div class="gate-text">The moon stores stories.</div>
         <h1>What stayed in orbit.</h1>
-        <div class="frnd-c-sub">Friends, places, shared obsessions, and the memories that still pull at the tide.</div>
+        <div class="frnd-c-sub">Friends, places, memories and thoughts.</div>
       </div>
       <div class="frnd-section-label">Across the years</div>
       <div id="frnd-timeline"></div>
@@ -330,7 +324,7 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
     <div class="path-relic ship-relic" aria-hidden="true"><span></span><i></i><i></i><i></i></div>
     <div class="rune-deco">The ship in the clouds</div>
     <h1>The person behind the work.</h1>
-    <p class="opener">What I care about, where I came from,<br>and what keeps me curious.</p>
+    <p class="opener">Who I am,<br>and what keeps me curious.</p>
   </div>
   <div id="view-timeline"></div>
   <div class="view-section-label">Recent logbook entries</div>
@@ -349,8 +343,8 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
       <i class="scroll-roller left"></i>
       <div class="scroll-opening-sheet">
         <span>LIBRARY &amp; NOTES</span>
-        <h2>Reading, experiments, and work in progress.</h2>
-        <p>The scroll opens once, then becomes the timeline.</p>
+        <h2>Reading and works in progress.</h2>
+        <p>The scroll opens once to show a timeline.</p>
       </div>
       <i class="scroll-roller right"></i>
     </div>
@@ -362,7 +356,7 @@ if (matchMedia('(pointer: coarse)').matches && screen.width < 980) {
     <div class="path-relic scroll-relic" aria-hidden="true"><i></i><i></i></div>
     <span class="pers-sword" aria-hidden="true">▤</span>
     <h1>Library &amp; Notes</h1>
-    <p class="sub">Reading, experiments, milestones, and work in progress.</p>
+    <p class="sub">Reading, experiments, milestones, and worsk in progress.</p>
   </div>
   <div class="pers-section-label">Timeline</div>
   <div id="pers-timeline"></div>

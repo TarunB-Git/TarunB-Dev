@@ -60,17 +60,41 @@ function fallbackReturnUrl(origin) {
 /* Escape before applying a deliberately small Markdown subset. Link output is
    restricted to HTTPS/HTTP and receives noopener. */
 export function renderMd(source) {
-  let html = esc(source || '');
-  html = html.replace(/\[([^\]]+)]\((https?:\/\/[^)\s]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  html = html.replace(/^### (.*)$/gm, '<h4>$1</h4>')
-    .replace(/^## (.*)$/gm, '<h3>$1</h3>')
-    .replace(/^# (.*)$/gm, '<h2>$1</h2>')
+  const inline = value => value
+    .replace(/\[([^\]]+)]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-  return html.split(/\n{2,}/).map(block => /^<h\d/.test(block)
-    ? block : `<p>${block.replace(/\n/g, '<br>')}</p>`).join('');
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  const lines = esc(source || '').replace(/\r\n?/g, '\n').split('\n');
+  const output = [];
+  let paragraph = [], list = [], listType = '', quote = [], code = [], inCode = false;
+  const flushParagraph = () => { if (paragraph.length) output.push(`<p>${inline(paragraph.join('<br>'))}</p>`); paragraph = []; };
+  const flushList = () => { if (list.length) output.push(`<${listType}>${list.map(item => `<li>${inline(item)}</li>`).join('')}</${listType}>`); list = []; listType = ''; };
+  const flushQuote = () => { if (quote.length) output.push(`<blockquote>${inline(quote.join('<br>'))}</blockquote>`); quote = []; };
+  for (const line of lines) {
+    if (/^```/.test(line)) {
+      flushParagraph(); flushList(); flushQuote();
+      if (inCode) { output.push(`<pre><code>${code.join('\n')}</code></pre>`); code = []; }
+      inCode = !inCode; continue;
+    }
+    if (inCode) { code.push(line); continue; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const unordered = line.match(/^[-*]\s+(.+)$/);
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    const blockquote = line.match(/^>\s?(.*)$/);
+    if (heading) { flushParagraph(); flushList(); flushQuote(); output.push(`<h${heading[1].length + 1}>${inline(heading[2])}</h${heading[1].length + 1}>`); }
+    else if (unordered || ordered) {
+      flushParagraph(); flushQuote();
+      const nextType = unordered ? 'ul' : 'ol';
+      if (listType && listType !== nextType) flushList();
+      listType = nextType; list.push((unordered || ordered)[1]);
+    } else if (blockquote) { flushParagraph(); flushList(); quote.push(blockquote[1]); }
+    else if (!line.trim()) { flushParagraph(); flushList(); flushQuote(); }
+    else { flushList(); flushQuote(); paragraph.push(line); }
+  }
+  if (inCode && code.length) output.push(`<pre><code>${code.join('\n')}</code></pre>`);
+  flushParagraph(); flushList(); flushQuote();
+  return output.join('');
 }
 
 function listPayload(value) {
@@ -115,6 +139,7 @@ export function mountBlog(container) {
         <button class="bsort on" type="button" data-sort="new" aria-pressed="true">newest</button>
         <button class="bsort" type="button" data-sort="popular" aria-pressed="false">popular</button>
       </div>
+      <a class="blog-archive-link" href="/blogs">all writing →</a>
     </div>
     <div class="blog-list" aria-live="polite"></div>
     <button class="blog-more" type="button" hidden>Load more</button>`;
@@ -175,6 +200,10 @@ export async function mountTaggedPosts(container, tag) {
   more.className = 'blog-more';
   more.textContent = 'Load more';
   more.hidden = true;
+  const archive = document.createElement('a');
+  archive.className = 'blog-archive-link';
+  archive.href = '/blogs';
+  archive.textContent = 'Browse all writing →';
 
   const load = async append => {
     if (state.loading) return;
@@ -190,6 +219,7 @@ export async function mountTaggedPosts(container, tag) {
       state.cursor = page.next_cursor || '';
       more.hidden = !state.cursor;
       container.appendChild(more);
+      container.appendChild(archive);
       const hasPosts = Boolean(container.querySelector('.blog-row'));
       container.hidden = !hasPosts;
       if (ownsLabel) label.hidden = !hasPosts;
@@ -209,8 +239,8 @@ export async function mountTaggedPosts(container, tag) {
 }
 
 function postRow(post, compact = false) {
-  const button = document.createElement('button');
-  button.type = 'button';
+  const button = document.createElement('a');
+  button.href = `/blog/${encodeURIComponent(post.slug)}`;
   button.className = `blog-row${compact ? ' compact' : ''}`;
   button.innerHTML = `
     <span class="br-main">
@@ -223,7 +253,6 @@ function postRow(post, compact = false) {
       ${compact ? '' : `<span class="br-excerpt">${esc(post.excerpt)}${post.excerpt ? '…' : ''}</span>`}
     </span>
     <span class="br-open" aria-hidden="true">read →</span>`;
-  button.addEventListener('click', event => openPost(post.slug, { opener: event.currentTarget, push: true }));
   return button;
 }
 

@@ -28,17 +28,17 @@ def test_uploaded_resume_pdf_is_separate_and_replaceable(isolated_data):
     result = upload(first, "my-resume.pdf")
     assert result["original_name"] == "my-resume.pdf"
     assert db.get_content("resume") == abridged
-    assert resume_pdf().path.read_bytes() == first
+    assert resume_pdf().body == first
     second = resume.build_pdf({"name": "Full PDF two"})
     upload(second, "updated.pdf")
     response = resume_pdf()
-    assert response.path.read_bytes() == second
+    assert response.body == second
     assert response.headers["cache-control"] == "no-store"
     assert db.get_content("resume") == abridged
     with pytest.raises(HTTPException) as invalid:
         upload(b"not a pdf", "fake.pdf")
     assert invalid.value.status_code == 415
-    assert resume_pdf().path.read_bytes() == second
+    assert resume_pdf().body == second
 
 
 def test_resume_html_and_pdf_share_one_source(isolated_data):

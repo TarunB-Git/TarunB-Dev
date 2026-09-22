@@ -61,13 +61,13 @@ body[data-shell-mode="world"][data-path] #privacy-settings {
 #pers-timeline .tl-mobile-event{background:#e7d2a0;color:#4b351f;border-color:#9e8057;border-radius:5px}#pers-timeline .tl-mobile-event .tl-title{color:#4b351f}#pers-timeline .tl-mobile-event .tl-summary{color:#6a5033}
 .profile-links{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .profile-link{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid currentColor;border-radius:7px;color:inherit;opacity:.85;text-decoration:none;transition:background .15s,opacity .15s}
-.profile-link svg{width:18px;height:18px;fill:currentColor}.profile-link:hover,.profile-link:focus-visible{opacity:1;background:#a9936826;outline-offset:3px}.profile-link[aria-disabled]{opacity:.38}
+.profile-link svg{width:18px;height:18px;fill:currentColor}.profile-link:hover,.profile-link:focus-visible{opacity:1;background:#a9936826;outline-offset:3px}.profile-link[data-disabled]{opacity:.38}
 .contacts{position:relative;padding-right:78px}.contacts #card-socials{position:absolute;right:0;top:0;color:var(--txt,#eee5d8)}
 #resume-socials{margin:14px 0 24px}#mini-socials .profile-link{width:27px;height:27px;border-color:var(--bdr,#bba67c55)}#mini-socials svg{width:16px;height:16px}
 #mini .mini-acts{align-items:center}#mini .mini-role{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:760px){#mini .mini-role,#mini .mini-sep{display:none}#mini .mini-bar{flex-wrap:wrap;gap:6px}#mini .mini-name{margin-right:auto}#mini .mini-acts{gap:4px}#mini-socials{gap:4px}}
 @media(max-width:400px){#mini .mini-bar{padding:7px 8px}#mini .mini-name{font-size:15px}#mini .mini-sdot{display:none}#mini .mini-acts{margin-left:0}#mini .mini-acts .mab{padding:5px}#mini .experience-switch.is-mini-switch{margin-left:0}}
-@media(prefers-reduced-motion:reduce){.guide-direction span,.profile-link{transition:none}}
+@media(prefers-reduced-motion:reduce){.guide-direction span,.profile-link,#world-nudge{transition:none}}
 
 /* Desktop-style layouts share one stacking context and a usable window dock. */
 body[data-shell-mode="directory"] .directory-dock{z-index:9000}
@@ -84,6 +84,8 @@ body[data-shell-mode="directory"] #privacy-settings{top:2px!important;right:125p
 /* Guidance lives in the compass card. These remain available to assistive
    technology without rendering a second and third copy over the world. */
 #graybox-status,#graybox-interact{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important}
+#world-nudge{position:absolute;z-index:52;left:50%;bottom:76px;max-width:min(360px,calc(100vw - 32px));padding:10px 14px;border:1px solid #c8b89055;border-radius:7px;background:#211f2bea;color:#eee8de;font:500 13px/1.4 Inter,sans-serif;text-align:center;opacity:0;transform:translate(-50%,8px);transition:opacity .22s ease,transform .22s ease;pointer-events:none;box-shadow:0 12px 34px #08070c4d}
+#world-nudge[hidden]{display:none}#world-nudge.show{opacity:1;transform:translate(-50%,0)}
 #cloud-utilities{position:absolute;right:18px;bottom:16px;display:flex;gap:10px;align-items:center;pointer-events:auto;z-index:50}
 #cloud-utilities button{position:static!important;min-height:36px;padding:8px 12px;border:1px solid #c6b8a766;border-radius:8px;background:#292332ed;color:#f1e8db;font:500 12px Inter,sans-serif;cursor:pointer;max-width:none}
 body[data-shell-mode="world"]:not([data-path]) #privacy-settings{display:none!important}
@@ -98,6 +100,7 @@ body[data-shell-mode="world"][data-path] #privacy-settings{left:18px!important;r
  .graybox-touch-actions button{width:48px;height:48px;font-size:9px;touch-action:none;backdrop-filter:none}
  #cloud-utilities{right:132px;bottom:14px;gap:6px}
  #cloud-utilities button{min-height:31px;padding:6px 8px;font-size:10px}
+ #world-nudge{bottom:126px;font-size:12px}
 }
 /* Acquisition: a brief white burst, dark pause, then the ability name. */
 #speed-unlock{inset:0;width:100%;height:100%;padding:0;transform:none;align-content:center;gap:18px;background:radial-gradient(ellipse,#080910df,#08091099);transition:opacity .5s;isolation:isolate}

@@ -646,8 +646,11 @@ export async function renderTimeline(container, path, scrollRoot, fallbackTimeli
   container.setAttribute('aria-busy', 'true');
   container.innerHTML = '<div class="tl-loading" role="status">Loading the timeline…</div>';
 
-  let timeline = await loadTimeline(path);
-  const usesFallback = !timeline.periods.length && fallbackTimeline;
+  const codePreview = document.body.dataset.contentSource === 'code';
+  let timeline = codePreview && fallbackTimeline
+    ? normalizeTimeline({ path, periods: [] }, path)
+    : await loadTimeline(path);
+  const usesFallback = Boolean(fallbackTimeline && !timeline.periods.length);
   if (usesFallback) timeline = normalizeTimeline(fallbackTimeline, path);
   // Each scroll entry gets its own span of parchment. Multiple entries in a
   // period must not share a nearly identical x-position and overlap.

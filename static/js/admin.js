@@ -1,5 +1,6 @@
 /* Structured portfolio administration for the versioned content API. */
 import { clearCsrf, errorMessage, maybeGet, v1 } from './v1.js';
+import { renderMd } from './blog.js';
 
 const $ = id => document.getElementById(id);
 const esc = value => {
@@ -8,6 +9,7 @@ const esc = value => {
   return node.innerHTML;
 };
 const PATHS = ['recruiter', 'viewer', 'friend', 'personal'];
+const BLOG_PRIMARY_TAGS = ['work', 'thoughts', 'dreams', 'friends', 'travel', 'life'];
 const LAYOUTS = ['upper', 'lower', 'feature', 'media-left', 'media-right'];
 const ACCENTS = ['gold', 'teal', 'violet', 'crimson', 'blue'];
 const PATH_ACCENT = { recruiter: 'gold', friend: 'teal', viewer: 'violet', personal: 'crimson' };
@@ -21,6 +23,8 @@ const contentCache = new Map();
 const contentRecords = new Map();
 let mediaCache = [];
 let needsOwnerSetup = false;
+let recoveryAvailable = false;
+let authMode = 'login';
 const cleanSlug = value => String(value || '').trim().toLowerCase()
   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 
@@ -77,15 +81,31 @@ async function boot() {
   try {
     const status = await v1.get('/admin/setup-status');
     needsOwnerSetup = Boolean(status?.needs_setup);
+    recoveryAvailable = Boolean(status?.recovery_available);
   } catch { needsOwnerSetup = false; }
-  if (!needsOwnerSetup) return;
-  $('login-title').textContent = 'CREATE OWNER ACCESS';
-  $('pass-label').textContent = 'Choose a passphrase';
-  $('pass').autocomplete = 'new-password';
-  $('confirm-label').classList.remove('hidden');
-  $('pass-confirm').classList.remove('hidden');
-  $('login-btn').textContent = 'create access';
-  $('login-help').textContent = 'Choose any non-empty passphrase. It is stored only as a one-way hash.';
+  renderAuthMode(needsOwnerSetup ? 'setup' : 'login');
+}
+
+function renderAuthMode(mode) {
+  authMode = mode;
+  const creating = mode === 'setup';
+  const recovering = mode === 'recover';
+  $('login-title').textContent = creating ? 'CREATE OWNER ACCESS' : recovering ? 'RESET OWNER ACCESS' : 'OWNER ACCESS';
+  $('recovery-label').classList.toggle('hidden', !recovering);
+  $('recovery-token').classList.toggle('hidden', !recovering);
+  $('pass-label').textContent = creating ? 'Choose a passphrase' : recovering ? 'New passphrase' : 'Owner passphrase';
+  $('pass').autocomplete = creating || recovering ? 'new-password' : 'current-password';
+  $('confirm-label').classList.toggle('hidden', !creating && !recovering);
+  $('pass-confirm').classList.toggle('hidden', !creating && !recovering);
+  $('login-btn').textContent = creating ? 'create access' : recovering ? 'reset and sign in' : 'enter';
+  $('reset-toggle').classList.toggle('hidden', creating || !recoveryAvailable);
+  $('reset-toggle').textContent = recovering ? 'back to sign in' : 'forgot passphrase?';
+  $('login-help').textContent = creating
+    ? 'Choose any non-empty passphrase. It is stored only as a one-way hash.'
+    : recovering
+      ? 'Enter the recovery token stored in your deployment settings, then choose a new passphrase. Every older admin session will be revoked.'
+      : 'The passphrase is stored as a one-way hash. It can be replaced without deleting portfolio content.';
+  $('login-err').textContent = '';
 }
 
 async function login() {
@@ -93,23 +113,35 @@ async function login() {
   errorNode.textContent = '';
   const passphrase = $('pass').value;
   if (!passphrase) { errorNode.textContent = 'enter a passphrase'; return; }
-  if (needsOwnerSetup && passphrase !== $('pass-confirm').value) {
+  if ((authMode === 'setup' || authMode === 'recover') && passphrase !== $('pass-confirm').value) {
     errorNode.textContent = 'the two passphrases do not match'; return;
   }
+  if (authMode === 'recover' && !$('recovery-token').value) {
+    errorNode.textContent = 'enter the deployment recovery token'; return;
+  }
   try {
-    await v1.post(needsOwnerSetup ? '/admin/setup' : '/admin/login', { passphrase });
+    const endpoint = authMode === 'setup' ? '/admin/setup' : authMode === 'recover' ? '/admin/recover' : '/admin/login';
+    const body = authMode === 'recover'
+      ? { recovery_token: $('recovery-token').value, new_passphrase: passphrase }
+      : { passphrase };
+    await v1.post(endpoint, body);
     clearCsrf();
     enter();
   } catch (error) {
     if (error.status === 429) errorNode.textContent = 'too many attempts — wait a few minutes';
-    else if (needsOwnerSetup && error.status === 409) errorNode.textContent = 'owner access was already created — reload and sign in';
-    else errorNode.textContent = needsOwnerSetup ? 'could not create owner access' : 'wrong passphrase';
+    else if (authMode === 'setup' && error.status === 409) errorNode.textContent = 'owner access was already created — reload and sign in';
+    else if (authMode === 'recover') errorNode.textContent = 'the recovery token was not accepted';
+    else errorNode.textContent = authMode === 'setup'
+      ? (error.detail || 'could not create owner access')
+      : 'wrong passphrase';
   }
 }
 
 $('login-btn').addEventListener('click', login);
 $('pass').addEventListener('keydown', event => { if (event.key === 'Enter') login(); });
 $('pass-confirm').addEventListener('keydown', event => { if (event.key === 'Enter') login(); });
+$('recovery-token').addEventListener('keydown', event => { if (event.key === 'Enter') login(); });
+$('reset-toggle').addEventListener('click', () => renderAuthMode(authMode === 'recover' ? 'login' : 'recover'));
 $('logout').addEventListener('click', async () => {
   await v1.post('/admin/logout', {}).catch(() => null);
   location.reload();
@@ -292,7 +324,12 @@ function contentEditor(panel, options) {
   actions.innerHTML = `<button class="btn ok save" type="button">Save</button><label class="check"><input class="content-published" type="checkbox" ${isPublished ? 'checked' : ''}><span>Publish now</span></label><button class="btn preview" type="button">Preview</button><button class="btn ghost revisions" type="button">Revisions</button><span class="note" role="status"></span>`;
   card.appendChild(actions);
   const collect = () => {
-    const data = readFields(grid);
+    // Card identity and Selected work/career are separate panels backed by the
+    // same document. Keep fields this panel does not render instead of
+    // replacing the document with a partial object.
+    const base = options.data && typeof options.data === 'object' && !Array.isArray(options.data)
+      ? options.data : {};
+    const data = { ...base, ...readFields(grid) };
     repeaters.forEach(repeater => {
       const values = repeater.read();
       data[repeater.dataset.key] = repeater._definition.transformRead ? repeater._definition.transformRead(values) : values;
@@ -371,7 +408,7 @@ async function renderSetup() {
   panel.appendChild(ops);
   const security = document.createElement('div');
   security.className = 'card';
-  security.innerHTML = '<h3>Owner security</h3><div class="note">Changing the passphrase revokes every active admin session. Recovery is performed with the server owner command.</div><div class="form-grid" style="margin-top:12px"><label class="field required"><span>Current passphrase</span><input class="current-pass" type="password" autocomplete="current-password"></label><label class="field required"><span>New passphrase</span><input class="new-pass" type="password" autocomplete="new-password"></label></div><div class="editor-actions"><button class="btn warn rotate-pass" type="button">Rotate passphrase</button><span class="note" role="status"></span></div>';
+  security.innerHTML = '<h3>Owner security</h3><div class="note">Changing the passphrase revokes every active admin session. If you forget it, use the deployment recovery token from the sign-in screen.</div><div class="form-grid" style="margin-top:12px"><label class="field required"><span>Current passphrase</span><input class="current-pass" type="password" autocomplete="current-password"></label><label class="field required"><span>New passphrase</span><input class="new-pass" type="password" autocomplete="new-password"></label></div><div class="editor-actions"><button class="btn warn rotate-pass" type="button">Rotate passphrase</button><span class="note" role="status"></span></div>';
   security.querySelector('.rotate-pass').addEventListener('click', async () => {
     const current = security.querySelector('.current-pass').value;
     const next = security.querySelector('.new-pass').value;
@@ -415,7 +452,7 @@ async function renderResume() {
   const panel = $('p-resume'); panel.innerHTML = '';
   const download = document.createElement('section');
   download.className = 'card';
-  download.innerHTML = '<h3>Downloadable résumé PDF</h3><p>Used by the card download and Device → Downloads. Uploading does not change the abridged résumé.</p><p class="pdf-current"></p><label>PDF document <input class="pdf-file" type="file" accept="application/pdf,.pdf"></label><button type="button" class="pdf-upload">Upload PDF</button><p class="pdf-note" role="status"></p>';
+  download.innerHTML = '<h3>Downloadable résumé PDF</h3><p>Used by the card download and Device → Downloads. Upload any PDF, or remove it so the download is regenerated from the freely editable résumé source below.</p><p class="pdf-current"></p><label>PDF document <input class="pdf-file" type="file" accept="application/pdf,.pdf"></label><div class="row" style="margin-top:10px"><button type="button" class="btn pdf-upload">Upload / replace PDF</button><button type="button" class="btn ghost pdf-generate">Use editable résumé</button></div><p class="pdf-note note" role="status"></p>';
   panel.append(download);
   const showPdf = info => { download.querySelector('.pdf-current').textContent = info.original_name ? `Current file: ${info.original_name}` : 'No PDF uploaded yet. Downloads currently use the generated résumé.'; };
   try { showPdf(await v1.get('/admin/resume-pdf')); } catch { /* upload remains available */ }
@@ -430,6 +467,13 @@ async function renderResume() {
       setNote(note, 'PDF published. Card and Downloads now use this file.', 'success');
     } catch (error) { setNote(note, errorMessage(error, 'Upload failed.'), 'error'); }
     finally { download.querySelector('.pdf-upload').disabled = false; }
+  });
+  download.querySelector('.pdf-generate').addEventListener('click', async event => {
+    const note = download.querySelector('[role="status"]');
+    event.currentTarget.disabled = true;
+    try { showPdf(await v1.del('/admin/resume-pdf')); setNote(note, 'Downloads now regenerate from the editable résumé below.', 'success'); }
+    catch (error) { setNote(note, errorMessage(error, 'Could not switch to the editable résumé.'), 'error'); }
+    finally { event.currentTarget.disabled = false; }
   });
   const source = await getContent('resume');
   const resume = {
@@ -756,8 +800,8 @@ async function renderMedia() {
   const panel = $('p-media');
   await loadMedia();
   panel.innerHTML = `
-    <div class="card"><h3>Upload media</h3><div class="upload-drop" tabindex="0"><div><strong>Drop a web-ready image or short video</strong><div class="note">JPEG, PNG, WebP, AVIF, GIF, MP4, or WebM · alt text is required</div><input class="media-file" type="file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif,video/mp4,video/webm" style="margin-top:12px"></div></div><div class="row" style="margin-top:10px"><label class="field grow required"><span>Alt text</span><input class="media-alt" maxlength="300"></label><button class="btn ok media-upload" type="button">Upload</button></div><div class="note upload-note" role="status"></div></div>
-    <div class="card"><h3>Media library</h3><div class="media-grid"></div></div>`;
+    <div class="card"><h3>Upload media</h3><div class="note">Uploads are stored in the server's persistent upload directory and appear publicly in Device → Home → Guest → Pictures. Use this library when attaching media to timeline entries.</div><div class="upload-drop" tabindex="0"><div><strong>Drop a web-ready image or short video</strong><div class="note">JPEG, PNG, WebP, AVIF, GIF, MP4, or WebM · alt text is required</div><input class="media-file" type="file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif,video/mp4,video/webm" style="margin-top:12px"></div></div><div class="row" style="margin-top:10px"><label class="field grow required"><span>Alt text</span><input class="media-alt" maxlength="300"></label><button class="btn ok media-upload" type="button">Upload</button></div><div class="note upload-note" role="status"></div></div>
+    <div class="card"><h3>Media library / Pictures folder</h3><div class="media-grid"></div></div>`;
   const drop = panel.querySelector('.upload-drop');
   const fileInput = panel.querySelector('.media-file');
   ['dragenter', 'dragover'].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.add('dragover'); }));
@@ -811,13 +855,24 @@ async function getPost(slug) {
 
 function postEditor(post, reload, isNew = false) {
   const card = document.createElement('section'); card.className = 'card';
-  card.innerHTML = `<h3>${isNew ? 'New post' : esc(post.title || 'Untitled post')} ${post.published === false ? '<span class="badge pending">draft</span>' : ''}</h3><div class="form-grid"></div><div class="section-head"><h4>Path tags</h4></div><div class="row post-tags"></div><div class="editor-actions"><button class="btn ok save" type="button">${isNew ? 'Create draft' : 'Save'}</button><button class="btn preview" type="button">Preview</button>${isNew ? '' : '<button class="btn ghost revisions" type="button">Revisions</button><button class="btn warn delete" type="button">Delete</button>'}<span class="note" role="status"></span></div>`;
+  card.innerHTML = `<h3>${isNew ? 'New post' : esc(post.title || 'Untitled post')} ${post.published === false ? '<span class="badge pending">draft</span>' : ''}</h3><div class="form-grid"></div><div class="section-head"><h4>Scroll paths</h4></div><div class="note">Choose where this post appears inside the four paths. Editorial tags are managed above.</div><div class="row post-tags"></div><div class="editor-actions"><button class="btn ok save" type="button">${isNew ? 'Create draft' : 'Save'}</button><button class="btn preview" type="button">Preview Markdown</button>${isNew ? '' : '<a class="btn ghost" href="/blogs" target="_blank" rel="noopener">Public archive</a><button class="btn ghost revisions" type="button">Revisions</button><button class="btn warn delete" type="button">Delete</button>'}<span class="note" role="status"></span></div>`;
   const grid = card.querySelector('.form-grid');
+  const localTime = value => value ? String(value).replace(/Z$/, '').slice(0, 16) : new Date().toISOString().slice(0, 16);
   [
     { key: 'title', label: 'Title', required: true }, { key: 'slug', label: 'Slug', required: true },
+    { key: 'primary_tag', label: 'Primary tag', type: 'select', options: BLOG_PRIMARY_TAGS, required: true },
+    { key: 'created_at', label: 'Published date & time', type: 'datetime-local', required: true },
+    { key: 'secondary_tags_text', label: 'Secondary tags', placeholder: 'machine-learning, field-notes' },
+    { key: 'series', label: 'Series (optional)', placeholder: 'Building this portfolio' },
     { key: 'excerpt', label: 'Excerpt', type: 'textarea', wide: true, rows: 2 },
     { key: 'body_md', label: 'Post body (Markdown)', type: 'textarea', wide: true, rows: 12, required: true },
-  ].forEach(def => grid.appendChild(makeField(def, post[def.key] || '')));
+  ].forEach(def => {
+    let value = post[def.key] || '';
+    if (def.key === 'created_at') value = localTime(post.created_at);
+    if (def.key === 'secondary_tags_text') value = (post.secondary_tags || []).join(', ');
+    if (def.key === 'primary_tag') value = post.primary_tag || 'thoughts';
+    grid.appendChild(makeField(def, value));
+  });
   PATHS.forEach(path => {
     const label = document.createElement('label'); label.className = 'check';
     label.innerHTML = `<input type="checkbox" value="${path}" ${(post.tags || []).includes(path) ? 'checked' : ''}><span>${path}</span>`;
@@ -830,11 +885,14 @@ function postEditor(post, reload, isNew = false) {
     ...readFields(grid),
     slug: cleanSlug(grid.querySelector('[data-field=slug]').value),
     tags: [...card.querySelectorAll('.post-tags input[value]')].filter(input => input.checked).map(input => input.value),
+    secondary_tags: grid.querySelector('[data-field=secondary_tags_text]').value.split(',').map(value => cleanSlug(value)).filter(Boolean),
+    created_at: new Date(grid.querySelector('[data-field=created_at]').value).toISOString(),
     published: card.querySelector('.post-published').checked,
   });
   card.querySelector('.save').addEventListener('click', async () => {
     const note = card.querySelector('[role=status]'), data = collect();
-    if (!data.title || !data.slug || !data.body_md) { setNote(note, 'Title, slug, and body are required.', 'error'); return; }
+    delete data.secondary_tags_text;
+    if (!data.title || !data.slug || !data.body_md || !data.primary_tag) { setNote(note, 'Title, slug, primary tag, date, and body are required.', 'error'); return; }
     try {
       if (post.id) await v1.put(`/admin/posts/${post.id}`, data);
       else await v1.post('/admin/posts', data);
@@ -843,7 +901,7 @@ function postEditor(post, reload, isNew = false) {
   });
   card.querySelector('.preview').addEventListener('click', () => {
     const data = collect();
-    openDialog(data.title || 'Post preview', `<p>${esc(data.body_md).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p>`);
+    openDialog(data.title || 'Post preview', `<p class="note">${esc(data.primary_tag)} · ${(data.secondary_tags || []).map(esc).join(' · ')} · ${esc(data.series || 'standalone post')}</p>${renderMd(data.body_md)}`);
   });
   card.querySelector('.revisions')?.addEventListener('click', () => showRevisions(post.id, post.title, 'blog_post'));
   card.querySelector('.delete')?.addEventListener('click', async () => {
@@ -856,7 +914,8 @@ function postEditor(post, reload, isNew = false) {
 
 async function renderBlog() {
   const panel = $('p-blog'); panel.innerHTML = '';
-  panel.appendChild(postEditor({ slug: '', title: '', excerpt: '', body_md: '', tags: [], published: false }, renderBlog, true));
+  panel.insertAdjacentHTML('beforeend', '<div class="card"><h3>Writing archive</h3><div class="note">Every post needs one primary editorial tag. Optional scroll paths decide where it is discovered inside the world. Secondary tags and series connect related writing.</div><div style="margin-top:12px"><a class="btn" href="/blogs" target="_blank" rel="noopener">Open /blogs ↗</a></div></div>');
+  panel.appendChild(postEditor({ slug: '', title: '', excerpt: '', body_md: '', tags: [], primary_tag: 'thoughts', secondary_tags: [], series: '', created_at: new Date().toISOString(), published: false }, renderBlog, true));
   const summaries = await getPostPage();
   for (const summary of summaries) {
     const post = await getPost(summary.slug);

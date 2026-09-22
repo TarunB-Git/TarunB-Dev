@@ -8,6 +8,7 @@ import { sendStat, openStats, closeStats } from '../stats.js';
 import { mountMessageBox, renderWall } from '../messages.js';
 import { mountTaggedPosts } from '../blog.js';
 import { setCursorPath } from '../cursor.js';
+import { applyBookingLink, loadBookingUrl } from '../booking.js';
 
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -20,19 +21,19 @@ let booted = false, bootDone = false;
 let usingSampleCard = false;
 
 const SAMPLE_CARD = {
-  name: 'Your Name',
-  role: 'PRODUCT ENGINEER / CREATIVE DEVELOPER',
+  name: 'Tarun Boddeda',
+  role: 'Software Developer / Foward Deployed Engineer / Researcher',
   status: 'Available for the right opportunity',
-  updated: 'Sample profile',
-  chips: ['Product engineering', 'Interactive web', 'Systems thinking'],
-  email: 'hello@example.com',
-  phone: '+10000000000',
-  phone_display: '+1 (000) 000-0000',
-  tagline: 'I turn complex ideas\ninto clear, useful products.',
-  logos: ['COMPANY ONE', 'STUDIO TWO', 'OPEN SOURCE'],
+  updated: 'Sep 2026 profile',
+  chips: ['Product engineering', 'Machine Learning', 'System Design'],
+  email: 'tarunb.co@gmail.com',
+  phone: '+46767464810',
+  phone_display: '+46 (767) 464 810',
+  tagline: 'I research, build, deploy and ship.',
+  logos: ['BTH', 'OPEN SOURCE'],
   recs: [
-    { q: 'A short, concrete recommendation can sit here.', a: 'Hiring Manager Name · Company' },
-    { q: 'Use this space for evidence about collaboration and delivery.', a: 'Colleague Name · Team' },
+    { q: "Tarun's contribution and commitment are highly satisfactory. He is a good team player and it has been a pleasure to work with him.", a: 'Ravi Pasupuleti · CEO, Baylogic' },
+    { q: 'I have been in contact with Tarun in his role as a mentor and have been consistently impressed by his commitment, initiative and positive impact on the students he has supported.', a: 'Susana Nikolin · Intize' },
   ],
   selected_work: [
     { num: '01', title: 'Project Atlas', sub: 'Platform redesign · Sample case study', stat: 'Result: +32% task completion', year: '2025' },
@@ -40,15 +41,15 @@ const SAMPLE_CARD = {
     { num: '03', title: 'Design System', sub: 'Cross-team foundation · Sample program', stat: 'Result: adopted by 6 teams', year: '2023' },
   ],
   career: [
-    { year: '2024 — PRESENT', role: 'Senior Product Engineer', co: 'Company Name', desc: 'Describe the scope, team, and clearest measurable outcome.' },
-    { year: '2021 — 2024', role: 'Software Engineer', co: 'Previous Company', desc: 'Summarize the systems you owned and the users you served.' },
-    { year: '2017 — 2021', role: 'B.Sc. / Relevant Training', co: 'University or Program', desc: 'Add the credential only if it strengthens the story.' },
+    { year: '2026 — PRESENT', role: 'Research Collaborator', co: 'Independent', desc: 'Describe the scope, team, and clearest measurable outcome.' },
+    { year: '2026 — PRESENT', role: 'Linux Kernel Summer Mentee', co: 'Linux Foundation', desc: 'Summarize the systems you owned and the users you served.' },
+    { year: '2025 — 2026', role: 'B.Sc. Comp Sci (AI & ML)', co: 'Blekinge Institute of Technology', desc: 'Add the credential only if it strengthens the story.' },
   ],
   footer: 'your-domain.example · sample content',
 };
 
 const SAMPLE_RESUME = {
-  stub: 'YOUR ROLE · hello@example.com · your-domain.example',
+  stub: 'Research Collaborator/ Dev · tarunb.co@gmail.com · your-domain.example',
   experience: SAMPLE_CARD.career.map(item => ({ role: item.role, co: item.co, dates: item.year, desc: item.desc })),
   education: [{ role: 'Relevant degree or training', co: 'Institution Name', dates: '20XX — 20XX', desc: 'Optional focus or distinction.' }],
   notable: SAMPLE_CARD.selected_work.map(item => ({ title: item.title, desc: `${item.sub}; ${item.stat}` })),
@@ -83,16 +84,15 @@ export async function initRecruiterPath() {
     return;
   }
   booted = true;
-  const [cardContent, resumeContent] = await Promise.all([
-    loadContent('card'),
-    loadContent('resume'),
-  ]);
+  const [cardContent, resumeContent] = await Promise.all([loadContent('card'), loadContent('resume')]);
   usingSampleCard = !cardContent.name && !cardContent.role;
   CARD = usingSampleCard ? structuredClone(SAMPLE_CARD) : { ...SAMPLE_CARD, ...cardContent };
-  RESUME = !resumeContent.stub && !(resumeContent.experience || []).length
+  RESUME = (!resumeContent.stub && !(resumeContent.experience || []).length)
     ? structuredClone(SAMPLE_RESUME)
     : { ...SAMPLE_RESUME, ...resumeContent };
   fillStaticContent();
+  const bookingUrl = await loadBookingUrl();
+  for (const id of ['cal-btn', 'mini-cal']) applyBookingLink($(id), bookingUrl);
   $('rec-scroll').addEventListener('scroll', handleScroll, { passive: true });
   refreshCardViewCount();
   bindCardInteractions();
@@ -211,7 +211,10 @@ function renderProfileLinks(card) {
         link.href = href;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-      } else link.setAttribute('aria-disabled', 'true');
+      } else {
+        link.setAttribute('role', 'img');
+        link.dataset.disabled = 'true';
+      }
       container.append(link);
     }
   }
@@ -235,14 +238,17 @@ function fillStaticContent() {
   phone.closest('.ci').hidden = !c.phone;
   if (c.phone) phone.href = `tel:${c.phone}`;
   else phone.removeAttribute('href');
+  const whatsapp = $('card-whatsapp');
+  const whatsappNumber = String(c.phone || '').replace(/\D/g, '');
+  if (whatsappNumber) {
+    whatsapp.href = `https://wa.me/${whatsappNumber}`;
+    whatsapp.hidden = false;
+  } else {
+    whatsapp.removeAttribute('href');
+    whatsapp.hidden = true;
+  }
   $('card-tagline').innerHTML = esc(c.tagline || '').replace(/\n/g, '<br>');
   $('card-logos').innerHTML = (c.logos || []).map(x => `<div class="logo">${esc(x)}</div>`).join('');
-  for (const id of ['cal-btn', 'mini-cal']) {
-    const booking = $(id);
-    booking.hidden = !c.cal_link;
-    if (c.cal_link) booking.href = c.cal_link;
-    else booking.removeAttribute('href');
-  }
   $('rec-foot').textContent = c.footer || '';
 
   $('sw-list').innerHTML = (c.selected_work || []).map(w => `
@@ -833,10 +839,24 @@ function pickColor(el) {
   sBg = el.dataset.bg; sFg = el.dataset.fg; sSub = el.dataset.sub;
   $('sprev').style.background = sBg; $('spn').style.color = sFg; $('spr').style.color = sSub;
 }
-function cpLink() { cp(location.href, 'Link copied!'); sendStat('share'); }
+function cardShareUrl() {
+  try {
+    const publicBase = new URL(CARD?.url || location.href, location.href);
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && !/^(localhost|127\.0\.0\.1)$/.test(publicBase.hostname)) {
+      return new URL('/recruiter', publicBase).href;
+    }
+  } catch { /* use the current page */ }
+  return location.href;
+}
+function cpLink() { cp(cardShareUrl(), 'Link copied!'); sendStat('share'); }
 function shareLinkedIn() {
   sendStat('share');
-  window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(location.href), '_blank');
+  const popup = window.open(
+    'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(cardShareUrl()),
+    'linkedin-share', 'width=720,height=720',
+  );
+  if (popup) popup.opener = null;
+  else toast('Allow pop-ups to open LinkedIn sharing.');
 }
 function dlCard() {
   const bhint = $('bhint'), cg = $('cg');
@@ -893,7 +913,7 @@ export function setRecruiterMode(on, spin = true) {
     isFlipping = false;
     if (!tiltRaf) tiltRaf = requestAnimationFrame(tiltLoop);
   }, 1800);
-  toast(on ? 'Recruiter mode on' : 'Dark mode restored');
+  toast(on ? 'Light mode on' : 'Dark mode restored');
 }
 
 export function isRecruiterMode() { return document.body.classList.contains('rm-on'); }

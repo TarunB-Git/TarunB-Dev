@@ -5,16 +5,71 @@ from . import db
 
 CARD = {
     "name": "Tarun Boddeda",
-    "role": "SENIOR PRODUCT ENGINEER",
-    "status": "Open to opportunities",
-    "updated": "Updated May 2026",
-    "chips": ["Full-time", "Consulting", "Open Source"],
-    "email": "alex@example.com",
-    "phone": "+15550001234",
-    "phone_display": "+1 (555) 000-1234",
-    "url": "https://alex.me",
-    "cal_link": "https://cal.com",
-    "tagline": "Building things\nthat actually matter.",
+    "role": "Software Developer / Forward Deployed Engineer / Researcher",
+    "status": "Available for the right opportunity",
+    "updated": "Sep 2026 profile",
+    "chips": ["Product engineering", "Machine Learning", "System Design"],
+    "email": "tarunb.co@gmail.com",
+    "phone": "+46767464810",
+    "phone_display": "+46 (767) 464 810",
+    "url": "https://tarunb.tech",
+    "cal_link": "https://calendar.app.google/Aamew3uUSs4tUXcP6",
+    "github_url": "https://github.com/tarunb-git",
+    "linkedin_url": "https://www.linkedin.com/in/tarun-boddeda",
+    "tagline": "I research, build, deploy and ship.",
+    "logos": ["BTH", "OPEN SOURCE"],
+    "recs": [
+        {"q": "Tarun's contribution and commitment are highly satisfactory. He is a good team player and it has been a pleasure to work with him.", "a": "Ravi Pasupuleti · CEO, Baylogic"},
+        {"q": "I have been in contact with Tarun in his role as a mentor and have been consistently impressed by his commitment, initiative and positive impact on the students he has supported.", "a": "Susana Nikolin · Intize"},
+    ],
+    "selected_work": [
+        {"num": "01", "title": "Project Atlas", "sub": "Platform redesign · Sample case study", "stat": "Result: +32% task completion", "year": "2025"},
+        {"num": "02", "title": "Cloud Console", "sub": "Developer tooling · Sample product", "stat": "Result: 40% faster setup", "year": "2024"},
+        {"num": "03", "title": "Design System", "sub": "Cross-team foundation · Sample program", "stat": "Result: adopted by 6 teams", "year": "2023"},
+    ],
+    "career": [
+        {"year": "2026 — PRESENT", "role": "Research Collaborator", "co": "Independent", "desc": "Describe the scope, team, and clearest measurable outcome."},
+        {"year": "2026 — PRESENT", "role": "Linux Kernel Summer Mentee", "co": "Linux Foundation", "desc": "Summarize the systems you owned and the users you served."},
+        {"year": "2025 — 2026", "role": "B.Sc. Computer Science (AI & ML)", "co": "Blekinge Institute of Technology", "desc": "Add the credential only if it strengthens the story."},
+    ],
+    "footer": "tarunb.tech · made with care",
+}
+
+RESUME = {
+    "name": "Tarun Boddeda",
+    "headline": "Software Developer / Forward Deployed Engineer / Researcher",
+    "stub": "Research collaborator / developer · tarunb.co@gmail.com · tarunb.tech",
+    "summary": "I research, build, deploy and ship.",
+    "contact": [
+        {"label": "Email", "value": "tarunb.co@gmail.com"},
+        {"label": "Website", "value": "https://tarunb.tech"},
+    ],
+    "experience": [
+        {"role": "Research Collaborator", "co": "Independent", "dates": "2026 — Present",
+         "desc": "Describe the scope, team, and clearest measurable outcome."},
+        {"role": "Linux Kernel Summer Mentee", "co": "Linux Foundation", "dates": "2026 — Present",
+         "desc": "Summarize the systems you owned and the users you served."},
+    ],
+    "education": [
+        {"role": "B.Sc. Computer Science (AI & ML)", "co": "Blekinge Institute of Technology", "dates": "2025 — 2026", "desc": ""},
+    ],
+    "notable": [
+        {"title": "Project Atlas", "desc": "Platform redesign · Sample case study"},
+        {"title": "Cloud Console", "desc": "Developer tooling · Sample product"},
+        {"title": "Design System", "desc": "Cross-team foundation · Sample program"},
+    ],
+}
+
+
+_MISSING = object()
+
+# The code defaults before synchronization existed. These are used only once
+# to distinguish untouched scaffold values from genuine owner edits.
+_LEGACY_CARD = {
+    "name": "Tarun Boddeda", "role": "SENIOR PRODUCT ENGINEER", "status": "Open to opportunities",
+    "updated": "Updated May 2026", "chips": ["Full-time", "Consulting", "Open Source"],
+    "email": "alex@example.com", "phone": "+15550001234", "phone_display": "+1 (555) 000-1234",
+    "url": "https://alex.me", "cal_link": "https://cal.com", "tagline": "Building things\nthat actually matter.",
     "logos": ["STRIPE", "VERCEL", "LINEAR"],
     "recs": [
         {"q": "Alex has a rare ability to ship fast without cutting corners. One of the most reliable engineers I've worked with.", "a": "Sarah Chen, CTO @ Acme Corp"},
@@ -35,25 +90,78 @@ CARD = {
     "footer": "alex.me · made with care",
 }
 
-RESUME = {
+_LEGACY_RESUME = {
     "stub": "SENIOR PRODUCT ENGINEER · alex@example.com · +1 (555) 000-1234 · alex.me",
     "experience": [
-        {"role": "Staff Engineer", "co": "Stripe", "dates": "2022 — Present",
-         "desc": "Led platform infrastructure serving 3M+ merchants. Reduced API latency 40% through distributed caching redesign. Mentored engineers across three teams."},
-        {"role": "Senior Engineer", "co": "Vercel", "dates": "2019 — 2022",
-         "desc": "Core contributor to Next.js edge runtime. Shipped Incremental Static Regeneration — now used by 800k+ sites worldwide."},
-        {"role": "Software Engineer", "co": "Linear", "dates": "2017 — 2019",
-         "desc": "Built real-time collaboration layer and keyboard shortcut system. Led REST → GraphQL migration."},
+        {"role": "Staff Engineer", "co": "Stripe", "dates": "2022 — Present", "desc": "Led platform infrastructure serving 3M+ merchants. Reduced API latency 40% through distributed caching redesign. Mentored engineers across three teams."},
+        {"role": "Senior Engineer", "co": "Vercel", "dates": "2019 — 2022", "desc": "Core contributor to Next.js edge runtime. Shipped Incremental Static Regeneration — now used by 800k+ sites worldwide."},
+        {"role": "Software Engineer", "co": "Linear", "dates": "2017 — 2019", "desc": "Built real-time collaboration layer and keyboard shortcut system. Led REST → GraphQL migration."},
     ],
-    "education": [
-        {"role": "B.S. Computer Science", "co": "UC Berkeley", "dates": "2013 — 2017", "desc": ""},
-    ],
+    "education": [{"role": "B.S. Computer Science", "co": "UC Berkeley", "dates": "2013 — 2017", "desc": ""}],
     "notable": [
         {"title": "OpenCache", "desc": "distributed cache library, 12k GitHub stars"},
         {"title": "DevBridge", "desc": "Figma plugin for design-to-code, 45k installs"},
         {"title": "\"Why Your API Is Lying to You\"", "desc": "280k reads, #1 Hacker News"},
     ],
 }
+
+
+def _merge_updated_defaults(previous, current, updated):
+    """Three-way merge code defaults without clobbering owner-edited fields."""
+    if isinstance(updated, dict) and isinstance(current, dict):
+        old = previous if isinstance(previous, dict) else {}
+        result = dict(current)
+        for key, new_value in updated.items():
+            old_value = old.get(key, _MISSING)
+            current_value = current.get(key, _MISSING)
+            if current_value is _MISSING:
+                result[key] = new_value
+            elif old_value is _MISSING:
+                # Existing installations predate baseline tracking. Treat their
+                # values as deliberate owner content.
+                result[key] = current_value
+            else:
+                result[key] = _merge_updated_defaults(old_value, current_value, new_value)
+        for key in set(old) - set(updated):
+            if current.get(key, _MISSING) == old[key]:
+                result.pop(key, None)
+        return result
+    return updated if current == previous else current
+
+
+def sync_code_defaults() -> None:
+    """Keep tracked code defaults and the editable database in one workflow.
+
+    A field changed in Admin remains owner-controlled. A field still equal to
+    the previous code default follows the next code edit automatically.
+    """
+    for key, defaults in {"card": CARD, "resume": RESUME}.items():
+        setting_key = f"code_defaults_v1:{key}"
+        encoded = json.dumps(defaults, ensure_ascii=False, sort_keys=True)
+        previous_raw = db.get_setting(setting_key)
+        record = db.get_content_record(key, include_draft=True)
+        if record is None:
+            db.set_content(key, defaults, published=True, note="installed code defaults", actor="code")
+        elif previous_raw:
+            try:
+                previous = json.loads(previous_raw)
+            except json.JSONDecodeError:
+                previous = {}
+            merged = _merge_updated_defaults(previous, record["data"], defaults)
+            if merged != record["data"]:
+                db.set_content(
+                    key, merged, published=record["published"],
+                    note="synchronized changed code defaults", actor="code",
+                )
+        else:
+            legacy = _LEGACY_CARD if key == "card" else _LEGACY_RESUME
+            merged = _merge_updated_defaults(legacy, record["data"], defaults)
+            if merged != record["data"]:
+                db.set_content(
+                    key, merged, published=record["published"],
+                    note="adopted synchronized code defaults", actor="code",
+                )
+        db.set_setting(setting_key, encoded)
 
 FRIEND_LINKS = [
     {"icon": "🐙", "label": "GitHub", "href": "#"},

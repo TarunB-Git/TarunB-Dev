@@ -52,7 +52,7 @@ def record_event(ev: StatEvent, request: Request):
             (ev.type, ev.path[:24], source))
         con.execute(
             "INSERT INTO daily_stats(day,event_type,path,source,count) VALUES(date('now'),?,?,?,1) "
-            "ON CONFLICT(day,event_type,path,source) DO UPDATE SET count=count+1",
+            "ON CONFLICT(day,event_type,path,source) DO UPDATE SET count=daily_stats.count+1",
             (ev.type, ev.path[:24], source),
         )
     return {"ok": True}

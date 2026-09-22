@@ -38,12 +38,8 @@ async def put_content(key: str, request: Request):
         raise HTTPException(422, str(exc)) from exc
     db.set_content(key, data)
     if key == "resume" and isinstance(data, dict):
-        from ..resume import cached_pdf, invalidate_cache
-        invalidate_cache()
-        try:
-            cached_pdf(data)
-        except OSError:
-            pass
+        from ..resume import build_pdf
+        build_pdf(data)
     return {"ok": True}
 
 

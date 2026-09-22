@@ -62,7 +62,11 @@ def initialize_passphrase(passphrase: str) -> bool:
         raise ValueError("admin passphrase cannot be empty")
     encoded = _PH.hash(passphrase)
     with db.connect() as con:
-        con.execute("BEGIN IMMEDIATE")
+        if db.is_postgres():
+            # Serialize the one-time setup decision across overlapping dynos.
+            con.execute("SELECT pg_advisory_xact_lock(703621842)")
+        else:
+            con.execute("BEGIN IMMEDIATE")
         if con.execute("SELECT 1 FROM settings WHERE key='passphrase_hash' AND value!=''").fetchone():
             con.rollback()
             return False
@@ -92,6 +96,15 @@ def ensure_passphrase() -> None:
     passphrase = os.environ.get("ADMIN_PASSPHRASE")
     if passphrase:
         set_passphrase(passphrase, revoke_sessions=False)
+
+
+def recover_passphrase(recovery_token: str, new_passphrase: str) -> bool:
+    """Replace owner access only when the deployment recovery secret matches."""
+    expected = config.admin_recovery_token()
+    if not expected or not hmac.compare_digest(recovery_token, expected):
+        return False
+    set_passphrase(new_passphrase, revoke_sessions=True)
+    return True
 
 
 def verify_passphrase(passphrase: str) -> bool:
@@ -277,7 +290,13 @@ def validate_same_origin(request: Request) -> None:
     if fetch_site == "cross-site":
         raise HTTPException(status_code=403, detail="cross-site request rejected")
     origin = request.headers.get("origin")
-    if origin and origin.rstrip("/") not in config.allowed_origins():
+    # A browser request made to the server's own scheme and Host is same-origin
+    # even when the local URL uses 127.0.0.1, a custom PORT, or another hostname
+    # not listed in deployment configuration. Explicit configured origins remain
+    # necessary for trusted reverse-proxy/public URLs.
+    allowed = config.allowed_origins()
+    allowed.add(str(request.base_url).rstrip("/"))
+    if origin and origin.rstrip("/") not in allowed:
         raise HTTPException(status_code=403, detail="origin not allowed")
 
 
@@ -329,7 +348,7 @@ def rate_limit(request: Request, bucket: str, limit: int = 20, window: float = 6
         con.execute("DELETE FROM rate_limits WHERE datetime(expires_at) <= datetime('now')")
         con.execute(
             "INSERT INTO rate_limits(subject_hash,bucket,window_start,hits,expires_at) VALUES(?,?,?,?,?) "
-            "ON CONFLICT(subject_hash,bucket,window_start) DO UPDATE SET hits=hits+1",
+            "ON CONFLICT(subject_hash,bucket,window_start) DO UPDATE SET hits=rate_limits.hits+1",
             (subject, bucket[:40], start, 1, expiry),
         )
         hits = con.execute(

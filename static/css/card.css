@@ -102,6 +102,7 @@ body.rm-on .chip{color:rgba(0,0,0,.62);border-color:rgba(0,0,0,.24)}
 .ib svg{width:11px;height:11px}
 .acts{display:flex;align-items:center;gap:6px}
 .ab{background:rgba(255,255,255,.07);border:.5px solid rgba(255,255,255,.15);border-radius:6px;color:var(--txt);font-family:'DM Sans',sans-serif;font-size:9.5px;letter-spacing:.02em;padding:5px 12px;cursor:pointer;transition:all .18s;white-space:nowrap;text-decoration:none;display:inline-block;line-height:1}
+#cal-btn[hidden],#mini-cal[hidden]{display:none!important}
 .ab:hover{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.3)}
 .ab.gd{background:rgba(232,184,112,.18);border-color:rgba(232,184,112,.4);color:var(--cgold2)}
 .ab.gd:hover{background:rgba(232,184,112,.3);color:var(--cgold3)}

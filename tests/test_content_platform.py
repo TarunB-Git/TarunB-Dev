@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request, Response, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import Headers
 
-from server import db
+from server import db, seed
 from server.models import CardDocument, CommentIn, MessageIn, PostIn, ReactionIn, StatEventIn, TimelineEventIn, TimelinePeriodIn
 from server.routers import v1
 
@@ -31,6 +31,21 @@ def test_business_card_social_profile_urls():
     for field in ("github_url", "linkedin_url"):
         with pytest.raises(ValidationError):
             CardDocument(**{field: "javascript:alert(1)"})
+
+
+def test_code_defaults_sync_into_admin_without_overwriting_owner_fields(monkeypatch):
+    seed.sync_code_defaults()
+    owner_card = {**seed.CARD, "name": "Owner-edited name"}
+    db.set_content("card", owner_card, published=True, note="owner edit")
+    monkeypatch.setitem(seed.CARD, "name", "New code name")
+    monkeypatch.setitem(seed.CARD, "role", "New code role")
+
+    seed.sync_code_defaults()
+
+    stored = db.get_content_record("card", include_draft=True)
+    assert stored["data"]["name"] == "Owner-edited name"
+    assert stored["data"]["role"] == "New code role"
+    assert stored["published"] is True
 
 
 def test_grouped_timeline_order_and_validated_links():
@@ -70,7 +85,9 @@ def test_media_upload_requires_real_file_and_alt_text():
     upload = UploadFile(file=upload_file, filename="tiny.png", headers=Headers({"content-type": "image/png"}))
     result = asyncio.run(v1.upload_media(file=upload, alt_text="A tiny red rectangle"))
     assert result["mime_type"] == "image/png" and result["width"] == 3
-    assert (v1.config.upload_dir() / result["url"].rsplit("/", 1)[-1]).is_file()
+    stored = db.get_blob(result["url"].rsplit("/", 1)[-1])
+    assert stored and stored["data"] == encoded.getvalue()
+    assert not any(v1.config.upload_dir().iterdir())
     bad_file = SpooledTemporaryFile(); bad_file.write(b"not an image"); bad_file.seek(0)
     bad = UploadFile(file=bad_file, filename="bad.png", headers=Headers({"content-type": "image/png"}))
     with pytest.raises(HTTPException) as invalid:

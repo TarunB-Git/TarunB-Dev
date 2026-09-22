@@ -1,4 +1,4 @@
-"""SQLite connection helpers and non-destructive numbered migrations."""
+"""Database helpers, SQLite migrations, and PostgreSQL bootstrap schema."""
 from __future__ import annotations
 
 import json
@@ -9,20 +9,32 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, db_compat, postgres_schema
 
 
 # Kept for older imports. New code calls ``config.database_path`` dynamically so
 # tests and operational commands can safely point at a temporary database.
 DB_PATH = config.database_path()
 TIMELINE_PATHS = ("recruiter", "viewer", "friend", "personal")
+IntegrityError = db_compat.integrity_errors()
+DatabaseError = db_compat.database_errors()
 
 
 def utcnow() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def connect(path: str | Path | None = None) -> sqlite3.Connection:
+def is_postgres() -> bool:
+    return config.database_backend() == "postgres"
+
+
+def is_sqlite() -> bool:
+    return not is_postgres()
+
+
+def connect(path: str | Path | None = None):
+    if path is None and is_postgres():
+        return db_compat.PostgresConnection(config.database_url())
     target = Path(path) if path is not None else config.database_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(target, timeout=config.SQLITE_BUSY_TIMEOUT_MS / 1000)
@@ -289,6 +301,28 @@ def _migration_007(con: sqlite3.Connection) -> None:
         PRIMARY KEY(day,dimension,value))""")
 
 
+def _migration_008(con: sqlite3.Connection) -> None:
+    """Add editorial metadata and indexes for the public writing archive."""
+    for declaration in (
+        "primary_tag TEXT NOT NULL DEFAULT 'thoughts'",
+        "secondary_tags_json TEXT NOT NULL DEFAULT '[]'",
+        "series TEXT NOT NULL DEFAULT ''",
+    ):
+        _add_column(con, "blog_posts", declaration)
+    con.execute("CREATE INDEX IF NOT EXISTS idx_blog_published_created ON blog_posts(published,created_at DESC,id DESC)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_blog_primary_created ON blog_posts(primary_tag,created_at DESC,id DESC)")
+    con.execute("PRAGMA optimize")
+
+
+def _migration_009(con: sqlite3.Connection) -> None:
+    """Store runtime uploads durably instead of relying on a local directory."""
+    con.execute("""CREATE TABLE IF NOT EXISTS file_blobs (
+        key TEXT PRIMARY KEY, data BLOB NOT NULL, mime_type TEXT NOT NULL,
+        byte_size INTEGER NOT NULL, sha256 TEXT NOT NULL,
+        original_name TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = (
     (1, "legacy baseline", _migration_001),
     (2, "content platform", _migration_002),
@@ -297,6 +331,8 @@ MIGRATIONS: tuple[tuple[int, str, Callable[[sqlite3.Connection], None]], ...] = 
     (5, "immutable credits and draft links", _migration_005),
     (6, "complete legal document fields", _migration_006),
     (7, "coarse audience aggregates", _migration_007),
+    (8, "blog editorial metadata", _migration_008),
+    (9, "durable uploaded file blobs", _migration_009),
 )
 
 
@@ -314,6 +350,9 @@ def _slug(value: str) -> str:
 
 
 def init_db(path: str | Path | None = None) -> None:
+    if path is None and is_postgres():
+        _init_postgres()
+        return
     target = Path(path) if path is not None else config.database_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     config.upload_dir().mkdir(parents=True, exist_ok=True)
@@ -336,12 +375,34 @@ def init_db(path: str | Path | None = None) -> None:
                 con.commit()
 
 
+def _init_postgres() -> None:
+    """Create the final schema once on a fresh managed PostgreSQL database."""
+    current = MIGRATIONS[-1][0]
+    with connect() as con:
+        con.execute(f"""CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY, name TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT ({postgres_schema.NOW_TEXT}))""")
+        applied = {row["version"] for row in con.execute("SELECT version FROM schema_migrations")}
+        if current in applied:
+            return
+        for statement in postgres_schema.STATEMENTS:
+            con.execute(statement)
+        con.executemany(
+            "INSERT INTO legal_settings(key,required) VALUES(?,1) ON CONFLICT(key) DO NOTHING",
+            ((key,) for key in postgres_schema.LEGAL_KEYS),
+        )
+        con.execute(
+            "INSERT INTO schema_migrations(version,name) VALUES(?,?) ON CONFLICT(version) DO NOTHING",
+            (current, "postgres canonical schema"),
+        )
+
+
 def schema_version() -> int:
     try:
         with connect() as con:
             row = con.execute("SELECT MAX(version) version FROM schema_migrations").fetchone()
         return int(row["version"] or 0)
-    except sqlite3.Error:
+    except DatabaseError:
         return 0
 
 
@@ -397,6 +458,8 @@ def set_content(
 
 
 def backup_database(destination: str | Path | None = None) -> Path:
+    if is_postgres():
+        raise RuntimeError("PostgreSQL backups are managed by Heroku; use `heroku pg:backups:capture`")
     source = config.database_path()
     if not source.exists():
         raise FileNotFoundError(source)
@@ -414,6 +477,8 @@ def backup_database(destination: str | Path | None = None) -> Path:
 
 def restore_database(source: str | Path) -> Path:
     """Restore a validated backup, preserving the replaced DB beside it."""
+    if is_postgres():
+        raise RuntimeError("Restore PostgreSQL with Heroku PG backups, not a dyno-local file")
     backup = Path(source).resolve()
     target = config.database_path().resolve()
     if not backup.is_file() or backup == target:
@@ -432,3 +497,76 @@ def restore_database(source: str | Path) -> Path:
     temporary.replace(target)
     init_db(target)
     return safety
+
+
+def put_blob(
+    key: str, data: bytes, mime_type: str, *, original_name: str = "", con=None,
+) -> dict[str, Any]:
+    """Persist an uploaded file in the active database with a global size cap."""
+    if not key or "/" in key or "\\" in key:
+        raise ValueError("unsafe blob key")
+    digest = __import__("hashlib").sha256(data).hexdigest()
+
+    def save(connection):
+        existing = connection.execute("SELECT byte_size FROM file_blobs WHERE key=?", (key,)).fetchone()
+        total = connection.execute("SELECT COALESCE(SUM(byte_size),0) total FROM file_blobs").fetchone()["total"]
+        projected = int(total or 0) - int(existing["byte_size"] if existing else 0) + len(data)
+        if projected > config.MAX_DATABASE_ASSET_BYTES:
+            raise ValueError(
+                f"stored media would exceed the {config.MAX_DATABASE_ASSET_BYTES}-byte database asset limit"
+            )
+        connection.execute(
+            "INSERT INTO file_blobs(key,data,mime_type,byte_size,sha256,original_name,created_at) "
+            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,"
+            "mime_type=excluded.mime_type,byte_size=excluded.byte_size,sha256=excluded.sha256,"
+            "original_name=excluded.original_name,created_at=excluded.created_at",
+            (key, data, mime_type, len(data), digest, original_name[:180], utcnow()),
+        )
+        return {"key": key, "mime_type": mime_type, "byte_size": len(data), "sha256": digest, "original_name": original_name[:180]}
+
+    if con is not None:
+        return save(con)
+    with connect() as connection:
+        return save(connection)
+
+
+def get_blob(key: str) -> dict[str, Any] | None:
+    with connect() as con:
+        row = con.execute("SELECT * FROM file_blobs WHERE key=?", (key,)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result["data"] = bytes(result["data"])
+    return result
+
+
+def delete_blob(key: str, *, con=None) -> bool:
+    def remove(connection):
+        return bool(connection.execute("DELETE FROM file_blobs WHERE key=?", (key,)).rowcount)
+    if con is not None:
+        return remove(con)
+    with connect() as connection:
+        return remove(connection)
+
+
+def backfill_local_blobs() -> int:
+    """Copy legacy upload files into the DB without deleting their source files."""
+    if not is_sqlite():
+        return 0
+    candidates: dict[str, tuple[str, str]] = {}
+    with connect() as con:
+        for row in con.execute("SELECT stored_name,mime_type,original_name FROM media_assets"):
+            candidates[row["stored_name"]] = (row["mime_type"], row["original_name"])
+    resume_pdf = get_content("resume_pdf", include_draft=True)
+    if isinstance(resume_pdf, dict) and resume_pdf.get("stored_name"):
+        candidates[str(resume_pdf["stored_name"])] = ("application/pdf", str(resume_pdf.get("original_name") or "resume.pdf"))
+    copied = 0
+    for key, (mime_type, original_name) in candidates.items():
+        if get_blob(key):
+            continue
+        source = (config.upload_dir() / key).resolve()
+        if source.parent != config.upload_dir().resolve() or not source.is_file():
+            continue
+        put_blob(key, source.read_bytes(), mime_type, original_name=original_name)
+        copied += 1
+    return copied

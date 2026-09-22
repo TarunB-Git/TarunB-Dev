@@ -9,7 +9,7 @@ from http.cookies import SimpleCookie
 import pytest
 from fastapi import HTTPException, Request, Response
 
-from server import db
+from server import config, db
 from server.auth import (
     CSRF_COOKIE, SESSION_COOKIE, create_session, is_admin, rate_limit,
     require_admin_write, set_passphrase, verify_passphrase,
@@ -55,6 +55,16 @@ def test_wal_foreign_keys_and_busy_timeout():
         assert con.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         assert con.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert con.execute("PRAGMA busy_timeout").fetchone()[0] >= 1000
+
+
+def test_render_external_url_is_the_safe_deployment_default(monkeypatch):
+    monkeypatch.delenv("PORTFOLIO_BASE_URL")
+    monkeypatch.delenv("PORTFOLIO_ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("PORTFOLIO_SECURE_COOKIES")
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://portfolio.onrender.com/")
+    assert config.base_url() == "https://portfolio.onrender.com"
+    assert config.allowed_origins() == {"https://portfolio.onrender.com"}
+    assert config.secure_cookies()
 
 
 def test_argon_session_csrf_and_origin():

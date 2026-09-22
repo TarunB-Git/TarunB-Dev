@@ -26,16 +26,20 @@ def run_once() -> dict:
     # Apply privacy deletion before copying the database so a fresh backup
     # cannot extend the lifetime of data that has reached its deletion date.
     retention = cleanup()
-    backup = db.backup_database()
-    cutoff = time.time() - BACKUP_RETENTION_DAYS * 24 * 60 * 60
     expired_backups = 0
-    for candidate in backup.parent.glob("site-*.db"):
-        if candidate != backup and candidate.is_file() and candidate.stat().st_mtime < cutoff:
-            candidate.unlink()
-            expired_backups += 1
+    if db.is_postgres():
+        backup_name = "managed-by-heroku-pgbackups"
+    else:
+        backup = db.backup_database()
+        backup_name = backup.name
+        cutoff = time.time() - BACKUP_RETENTION_DAYS * 24 * 60 * 60
+        for candidate in backup.parent.glob("site-*.db"):
+            if candidate != backup and candidate.is_file() and candidate.stat().st_mtime < cutoff:
+                candidate.unlink()
+                expired_backups += 1
     result = {
         "event": "daily_maintenance",
-        "backup": backup.name,
+        "backup": backup_name,
         "expired_backups_deleted": expired_backups,
         "retention": retention,
         "completed_at": datetime.now(UTC).isoformat(),

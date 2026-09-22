@@ -45,6 +45,8 @@ const TOP_CEILING_Y = CLOUD_CEILING_CENTER_Y + CLOUD_CEILING_RADIUS_Y;
 const FOCUS_DURATION = 2.4;
 const FOCUS_IN = 0.42;
 const FOCUS_OUT = 0.72;
+const MOON_FALL_DELAY = 2;
+const MOON_FALL_DURATION = 3.4;
 const DOUBLE_SPACE_WINDOW = 360;
 const HOLD_TO_FLY_DELAY = 0.48;
 let maxFlightHeight = TOP_CEILING_Y - 1.9;
@@ -104,6 +106,7 @@ let nearLandmarkId = null;
 let hoveredLandmarkId = null;
 let focusedLandmarkId = null;
 let interactionFocus = 0;
+let interactionFocusDuration = FOCUS_DURATION;
 let jumpQueued = false;
 let drag = null;
 let resizeTimer = 0;
@@ -119,6 +122,9 @@ try { speedUnlocked = sessionStorage.getItem(SPEED_UNLOCK_KEY) === 'true'; } cat
 let moonState = visitedPaths.has('friend') ? 'landed' : 'locked';
 let moonFallElapsed = 0;
 let moonFallPending = false;
+let birdOnlyLowerElapsed = 0;
+let birdOnlyNudgeShown = false;
+let birdOnlyNudgeTimer = 0;
 let birdChaseStep = visitedPaths.has('recruiter') ? 3 : loadBirdChaseStep();
 let birdTeleportCooldown = 0;
 let lastForwardTap = -Infinity;
@@ -182,7 +188,7 @@ function applyLandmarkLayout() {
   BIRD_CHASE_POINTS[0].set(portrait ? -2 : -3, portrait ? 8 : 9, portrait ? 15 : 13);
   BIRD_CHASE_POINTS[1].set(portrait ? 6 : 8, portrait ? 7.5 : 8.5, portrait ? 43 : 45);
   BIRD_CHASE_POINTS[2].set(portrait ? -9 : -12, portrait ? 9 : 10, portrait ? 5 : 2);
-  BIRD_CHASE_POINTS[3].set(portrait ? 8 : 12, portrait ? 8.5 : 9.5, portrait ? -17 : -20);
+  BIRD_CHASE_POINTS[3].set(portrait ? -14 : -18, portrait ? 8.5 : 9.5, portrait ? -20 : -24);
   BIRD_POS.copy(BIRD_CHASE_POINTS[Math.min(birdChaseStep, BIRD_CHASE_POINTS.length - 1)]);
   LANDMARK_ANCHORS.friend.set(MOON_LAND_POS.x, PLATFORM.top, MOON_LAND_POS.z + 6);
   LANDMARK_ANCHORS.viewer.set(SHIP_POS.x, PLATFORM.top, SHIP_POS.z + 5);
@@ -351,6 +357,7 @@ function buildInterface() {
     </div>
     <button id="graybox-interact" type="button"><span>Landmark nearby</span><strong>Press E or click to enter</strong></button>
     <div id="graybox-status" role="status" aria-live="polite"></div>
+    <div id="world-nudge" role="status" aria-live="polite" hidden>Try Device mode, or follow the arrow.</div>
     <div id="cloud-utilities"><button id="graybox-character" type="button" aria-label="Switch character">Character · Mage</button><button id="cloud-privacy" type="button">Privacy</button></div>
     <div id="speed-unlock" role="status" aria-live="polite" hidden><i aria-hidden="true"></i><strong>Gale Step</strong><span>Double-tap W or ↑ to surge for 10 seconds.</span></div>
     <div id="speed-boost" aria-live="polite" hidden><span>Gale Step</span><b>10.0</b></div>`;
@@ -1039,6 +1046,21 @@ function addCompanion(record) {
   if (!player || companions.some(item => item.id === record.id)) return;
   const object = cloneForCompanion(record.companionSource);
   fitModel(object, record.id === 'viewer' ? 1.8 : record.id === 'personal' ? 1.25 : 1.4);
+  object.traverse(node => {
+    if (node.isMesh || node.isSkinnedMesh) node.userData.companionId = record.id;
+  });
+  // The visible models—especially individual birds—have narrow, animated
+  // geometry. Give each miniature a forgiving invisible pointer target while
+  // leaving its visual size and orbit unchanged.
+  const worldHitRadius = record.id === 'recruiter' ? 1.45 : 1.05;
+  const localScale = Math.max(Math.abs(object.scale.x), 1e-4);
+  const hitTarget = new THREE.Mesh(
+    new THREE.SphereGeometry(worldHitRadius / localScale, 14, 10),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false }),
+  );
+  hitTarget.userData.companionId = record.id;
+  hitTarget.position.y = .18 / localScale;
+  object.add(hitTarget);
   scene.add(object);
   companions.push({
     id: record.id,
@@ -1073,36 +1095,52 @@ function startMoonFall() {
   moonFallElapsed = 0;
   record.locked = true;
   focusedLandmarkId = 'friend';
-  interactionFocus = reducedMotion.matches ? 0.8 : 4.9;
+  interactionFocusDuration = reducedMotion.matches ? .45 : MOON_FALL_DELAY + MOON_FALL_DURATION + .9;
+  interactionFocus = interactionFocusDuration;
   landmarkFocus.copy(record.object.position);
   $('s-world')?.setAttribute('data-moon-state', moonState);
   setNearObject(null);
-  setStatus('The moon is descending.');
+  setStatus('The moon is trembling. Keep watching.');
 }
 
 function updateMoonFall(delta) {
   if (moonState !== 'falling') return;
   const record = landmarks.get('friend');
   if (!record) return;
-  const duration = reducedMotion.matches ? 0.2 : 4.2;
-  moonFallElapsed = Math.min(duration, moonFallElapsed + delta);
-  const raw = moonFallElapsed / duration;
-  const aboveOpening = new THREE.Vector3(PASSAGE.x, UPPER_TERRACE_Y + 5.2, PASSAGE.z);
-  const belowOpening = new THREE.Vector3(PASSAGE.x, UPPER_TERRACE_Y - UPPER_TERRACE_THICKNESS - 3.2, PASSAGE.z);
-  if (raw < .36) {
-    const phase = THREE.MathUtils.smoothstep(raw / .36, 0, 1);
-    record.object.position.lerpVectors(MOON_FAR_POS, aboveOpening, phase);
-  } else if (raw < .66) {
-    const phase = THREE.MathUtils.smoothstep((raw - .36) / .3, 0, 1);
-    record.object.position.lerpVectors(aboveOpening, belowOpening, phase);
+  const delay = reducedMotion.matches ? .12 : MOON_FALL_DELAY;
+  const duration = reducedMotion.matches ? .2 : MOON_FALL_DURATION;
+  const total = delay + duration;
+  const previousElapsed = moonFallElapsed;
+  moonFallElapsed = Math.min(total, moonFallElapsed + delta);
+  if (moonFallElapsed < delay) {
+    const anticipation = THREE.MathUtils.smootherstep(moonFallElapsed / delay, 0, 1);
+    const shake = .025 + anticipation * .13;
+    record.object.position.copy(MOON_FAR_POS);
+    record.object.position.x += Math.sin(moonFallElapsed * 34) * shake;
+    record.object.position.y += Math.sin(moonFallElapsed * 47) * shake * .42;
+    record.object.position.z += Math.cos(moonFallElapsed * 39) * shake * .72;
   } else {
-    const phase = THREE.MathUtils.smoothstep((raw - .66) / .34, 0, 1);
-    record.object.position.lerpVectors(belowOpening, MOON_LAND_POS, phase);
+    if (previousElapsed < delay) setStatus('The moon breaks loose and falls through the clouds.');
+    const raw = (moonFallElapsed - delay) / duration;
+    const verticalPhase = THREE.MathUtils.smootherstep(raw, 0, 1);
+    record.object.position.y = THREE.MathUtils.lerp(MOON_FAR_POS.y, MOON_LAND_POS.y, verticalPhase);
+    if (raw < .32) {
+      const align = THREE.MathUtils.smootherstep(raw / .32, 0, 1);
+      record.object.position.x = THREE.MathUtils.lerp(MOON_FAR_POS.x, PASSAGE.x, align);
+      record.object.position.z = THREE.MathUtils.lerp(MOON_FAR_POS.z, PASSAGE.z, align);
+    } else if (raw < .68) {
+      record.object.position.x = PASSAGE.x;
+      record.object.position.z = PASSAGE.z;
+    } else {
+      const settle = THREE.MathUtils.smootherstep((raw - .68) / .32, 0, 1);
+      record.object.position.x = THREE.MathUtils.lerp(PASSAGE.x, MOON_LAND_POS.x, settle);
+      record.object.position.z = THREE.MathUtils.lerp(PASSAGE.z, MOON_LAND_POS.z, settle);
+    }
   }
   record.baseY = record.object.position.y;
   record.focus.copy(record.object.position);
   landmarkFocus.copy(record.object.position);
-  if (raw < 1) return;
+  if (moonFallElapsed < total) return;
 
   moonState = 'landed';
   MOON_POS.copy(MOON_LAND_POS);
@@ -1696,6 +1734,7 @@ function bindEvents() {
     if (drag?.id === event.pointerId && !drag.moved) {
       const target = worldTargetAt(event.clientX, event.clientY);
       if (target === 'admin') window.location.assign('/admin');
+      else if (target?.startsWith('companion:')) openCompanion(target.slice('companion:'.length));
       else if (target) interact(target);
     }
     drag = null;
@@ -1855,7 +1894,10 @@ function updateMovement(delta) {
     if (value) value.textContent = speedBoostRemaining.toFixed(1);
   }
   const moveAxis = THREE.MathUtils.clamp(axis(['w', 'arrowup'], ['s', 'arrowdown']) + joystick.forward, -1, 1);
-  if (coarsePointer.matches && speedUnlocked && joystick.forward > .8) {
+  // Forward-diagonal drags usually produce a Y value near .7, not .8.
+  // The actual joystick input works on touch devices even if pointer media
+  // queries are misreported by an embedded/mobile browser.
+  if (speedUnlocked && joystick.forward > .55) {
     forwardHeldFor += delta;
     if (forwardHeldFor >= 2 && !forwardSurgeLatched && speedBoostRemaining <= 0) {
       triggerSpeedBoost();
@@ -2010,7 +2052,8 @@ function interact(requestedId = nearLandmarkId) {
     setStatus(record ? `Move closer to the ${record.label} before entering.` : 'Move closer to a landmark before entering.');
     return;
   }
-  interactionFocus = FOCUS_DURATION;
+  interactionFocusDuration = FOCUS_DURATION;
+  interactionFocus = interactionFocusDuration;
   focusedLandmarkId = record.id;
   landmarkFocus.copy(record.focus);
   markVisited(record);
@@ -2020,9 +2063,39 @@ function interact(requestedId = nearLandmarkId) {
   pathTimer = setTimeout(() => opts.onPathChosen?.(record.id), reducedMotion.matches ? 0 : 720);
 }
 
+function openCompanion(id) {
+  if (interactionFocus > 0 || !companions.some(item => item.id === id)) return;
+  clearTimeout(pathTimer);
+  setStatus(`${LANDMARK_META[id]?.title || 'Path'} opened from its miniature.`);
+  opts.onPathChosen?.(id);
+}
+
 function setStatus(message) {
   const status = $('graybox-status');
   if (status) status.textContent = message;
+}
+
+function updateExplorationNudge(delta) {
+  if (!player || birdOnlyNudgeShown) return;
+  const birdsOnly = visitedPaths.has('recruiter')
+    && !visitedPaths.has('viewer') && !visitedPaths.has('personal') && !visitedPaths.has('friend');
+  const onLowerGround = player.position.y < UPPER_TERRACE_Y - UPPER_TERRACE_THICKNESS - 1;
+  if (!birdsOnly || !onLowerGround) {
+    birdOnlyLowerElapsed = 0;
+    return;
+  }
+  birdOnlyLowerElapsed += delta;
+  if (birdOnlyLowerElapsed < 120) return;
+  birdOnlyNudgeShown = true;
+  const nudge = $('world-nudge');
+  if (!nudge) return;
+  nudge.hidden = false;
+  requestAnimationFrame(() => nudge.classList.add('show'));
+  clearTimeout(birdOnlyNudgeTimer);
+  birdOnlyNudgeTimer = setTimeout(() => {
+    nudge.classList.remove('show');
+    setTimeout(() => { nudge.hidden = true; }, reducedMotion.matches ? 0 : 280);
+  }, reducedMotion.matches ? 3500 : 7000);
 }
 
 function worldTargetAt(clientX, clientY) {
@@ -2034,9 +2107,12 @@ function worldTargetAt(clientX, clientY) {
   );
   raycaster.setFromCamera(pointerNdc, camera);
   const targets = [...landmarks.values()].map(record => record.object);
+  targets.push(...companions.map(companion => companion.object));
   if (adminBoard?.visible) targets.push(adminBoard);
   const hit = raycaster.intersectObjects(targets, true)[0];
-  return hit?.object?.userData?.adminPortal ? 'admin' : (hit?.object?.userData?.landmarkId || null);
+  if (hit?.object?.userData?.adminPortal) return 'admin';
+  if (hit?.object?.userData?.companionId) return `companion:${hit.object.userData.companionId}`;
+  return hit?.object?.userData?.landmarkId || null;
 }
 
 function landmarkAt(clientX, clientY) {
@@ -2066,7 +2142,7 @@ function updateCamera(delta, snap = false) {
   cameraLook.y += 0.82 + Math.max(0, -cameraPitch) * 10.5;
 
   if (interactionFocus > 0) {
-    const elapsedFocus = FOCUS_DURATION - interactionFocus;
+    const elapsedFocus = interactionFocusDuration - interactionFocus;
     const entering = THREE.MathUtils.smoothstep(elapsedFocus, 0, FOCUS_IN);
     const leaving = THREE.MathUtils.smoothstep(interactionFocus, 0, FOCUS_OUT);
     const blend = Math.min(entering, leaving);
@@ -2096,12 +2172,14 @@ function animate(now) {
   lastFrameAt = now;
   elapsed += delta;
   updateMovement(delta);
+  updateExplorationNudge(delta);
   playerMixer?.update(delta);
   updateMoonFall(delta);
   if (interactionFocus > 0) {
     interactionFocus = Math.max(0, interactionFocus - delta);
     if (interactionFocus === 0) {
       focusedLandmarkId = null;
+      interactionFocusDuration = FOCUS_DURATION;
       $('graybox-interact')?.classList.toggle('show', Boolean(nearLandmarkId));
       const nearby = landmarks.get(nearLandmarkId);
       setStatus(nearby ? `${nearby.label} in range. Press E.` : 'Choose a landmark to explore.');
@@ -2215,6 +2293,7 @@ export function onReturnToWorld() {
     spaceHeld = false;
     spaceHeldFor = 0;
     interactionFocus = 0;
+    interactionFocusDuration = FOCUS_DURATION;
     focusedLandmarkId = null;
     updateFlightControls();
     setNearObject(null);

@@ -32,7 +32,9 @@ export default defineConfig({
       PORTFOLIO_BASE_URL: baseURL,
       PORTFOLIO_ALLOWED_ORIGINS: baseURL,
       PORTFOLIO_SECURE_COOKIES: 'false',
+      PORTFOLIO_TRUST_PROXY_HEADERS: 'true',
       ADMIN_PASSPHRASE: 'local-e2e-passphrase-only',
+      ADMIN_RECOVERY_TOKEN: 'local-e2e-recovery-token-only',
     },
   },
 });
