@@ -155,3 +155,11 @@ body[data-shell-mode="world"][data-path] #privacy-settings{left:18px!important;r
   #mini .mini-bar::-webkit-scrollbar{display:none}
   #mini .mini-role{max-width:126px}
 }
+
+/* Keep Device Privacy clear of the centered mode switch on narrow screens. */
+@media(max-width:720px){
+  body[data-shell-mode="directory"]:not([data-path]) #privacy-settings{
+    top:36px!important;right:8px!important;bottom:auto!important;left:auto!important;
+    min-height:28px;padding:5px 9px!important;
+  }
+}

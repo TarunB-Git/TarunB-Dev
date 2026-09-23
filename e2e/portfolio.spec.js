@@ -181,32 +181,78 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
   await waitForApp(page);
   const banner = page.locator('#cookie-banner');
   const reject = page.locator('[data-consent="reject"]');
+  const allow = page.locator('[data-consent="allow"]');
   const privacy = page.locator('#privacy-settings');
+
+  const expectDialogOpen = async choice => {
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveClass(/\bshow\b/);
+    await expect(banner).toHaveAttribute('open', '');
+    await expect(banner).toHaveAttribute('aria-hidden', 'false');
+    expect(await banner.evaluate(dialog => dialog.matches(':modal'))).toBe(true);
+    const box = await banner.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(1440);
+    expect(box.y + box.height).toBeLessThanOrEqual(900);
+    expect(await page.locator(choice).evaluate(button => {
+      const rect = button.getBoundingClientRect();
+      return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+        ?.closest('#cookie-banner')?.id;
+    })).toBe('cookie-banner');
+  };
+
+  const expectDismissed = async () => {
+    await expect(banner).not.toHaveAttribute('open', '');
+    await expect(banner).not.toHaveClass(/\bshow\b/);
+    await expect(banner).toHaveAttribute('aria-hidden', 'true');
+    await expect(privacy).toHaveAttribute('aria-expanded', 'false');
+    expect(await page.locator(':modal').count()).toBe(0);
+  };
+
+  // A first visit already has a non-modal choice bar. Reopening it through
+  // Privacy must promote it to a real modal without leaving a stale close
+  // event behind.
   await expect(banner).toHaveClass(/\bshow\b/);
   await expect(banner).toHaveAttribute('open', '');
   await expect(reject).toBeVisible();
-  expect(await reject.evaluate(button => {
-    const rect = button.getBoundingClientRect();
-    return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('#cookie-banner')?.id;
-  })).toBe('cookie-banner');
-  await reject.click();
-  await expect(privacy).toBeVisible();
   await privacy.click();
-  await expect(banner).toHaveClass(/\bshow\b/);
-  await expect(banner).toHaveAttribute('open', '');
-  await expect(page.locator('[data-consent="allow"]')).toBeVisible();
-  await reject.click();
-
+  await expectDialogOpen('[data-consent="reject"]');
+  await allow.click();
+  await expectDismissed();
   await page.locator('#experience-switch [data-shell-mode="world"]').click();
   await expect(page).toHaveURL('/?shell=world');
+  await page.locator('#experience-switch [data-shell-mode="directory"]').click();
+  await expect(page).toHaveURL('/?shell=directory');
+
+  await expect(privacy).toBeVisible();
+  await privacy.click();
+  await expectDialogOpen('[data-consent="allow"]');
+  await reject.click();
+  await expectDismissed();
+  await page.locator('#experience-switch [data-shell-mode="world"]').click();
+  await expect(page).toHaveURL('/?shell=world');
+
   await expect(privacy).toBeHidden();
   await expect(page.locator('#cloud-privacy')).toBeVisible();
   await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
   await page.locator('#cloud-privacy').click();
-  await expect(banner).toHaveClass(/\bshow\b/);
-  await expect(banner).toHaveAttribute('open', '');
+  await expectDialogOpen('[data-consent="reject"]');
   await expect(privacy).toHaveAttribute('aria-expanded', 'true');
   await reject.click();
+  await expectDismissed();
+  await page.locator('#experience-switch [data-shell-mode="directory"]').click();
+  await expect(page).toHaveURL('/?shell=directory');
+  await page.locator('#experience-switch [data-shell-mode="world"]').click();
+  await expect(page).toHaveURL('/?shell=world');
+
+  await page.locator('#cloud-privacy').click();
+  await expectDialogOpen('[data-consent="allow"]');
+  await page.keyboard.press('Escape');
+  await expectDismissed();
+  await page.locator('#experience-switch [data-shell-mode="directory"]').click();
+  await expect(page).toHaveURL('/?shell=directory');
 
   await page.goto('/recruiter?shell=world');
   await waitForApp(page);
@@ -221,10 +267,11 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
   await expect(page.locator('#mini')).toHaveClass(/\bshow\b/);
   await expect(page.locator('#mini #privacy-settings')).toBeVisible();
   await page.locator('#mini #privacy-settings').click();
-  await expect(banner).toHaveAttribute('open', '');
-  await expect(reject).toBeVisible();
-  await expect(page.locator('[data-consent="allow"]')).toBeVisible();
-  await reject.click();
+  await expectDialogOpen('[data-consent="allow"]');
+  await allow.click();
+  await expectDismissed();
+  await page.locator('#mini #experience-switch [data-shell-mode="directory"]').click();
+  await expect(page).toHaveURL('/?shell=directory');
 });
 
 test('Device reveals ship and scroll destinations only after their Cloud landmarks', async ({ page }) => {

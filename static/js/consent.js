@@ -111,6 +111,11 @@ export function bindConsentBanner(root = document) {
     });
   });
   banner.addEventListener('close', () => {
+    // The browser queues `close` events. A quick reopen can happen before an
+    // earlier close event is delivered, so only sync closed UI while the
+    // dialog is still closed; otherwise a stale event would hide an active
+    // modal while it continued making the page inert.
+    if (banner.open) return;
     banner.classList.remove('show');
     banner.setAttribute('aria-hidden', 'true');
     settings.forEach(button => button.setAttribute('aria-expanded', 'false'));

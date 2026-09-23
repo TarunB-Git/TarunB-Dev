@@ -611,7 +611,44 @@ function bindCardInteractions() {
     if (rect.width > 0) $('fhint').textContent = (e.clientX - rect.left) > rect.width / 2 ? 'flip →' : '← flip';
   });
 
+  let touchStart = null;
+  let swipeClick = null;
+  card.addEventListener('pointerdown', event => {
+    // Leave links and action buttons to their normal tap handlers.
+    if (swipeClick) swipeClick = null;
+    if (event.pointerType !== 'touch' || event.target.closest('button,a,.apill') ||
+        foldActive || foldAnimating || isFlipping) return;
+    touchStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  }, { passive: true });
+
+  const finishCardSwipe = event => {
+    if (!touchStart || touchStart.id !== event.pointerId) return;
+    const start = touchStart;
+    touchStart = null;
+    if (foldActive || foldAnimating || isFlipping) return;
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    if (Math.abs(deltaX) < 44 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+    swipeClick = { x: event.clientX, y: event.clientY, at: performance.now() };
+    doFlip(deltaX > 0);
+  };
+  const cancelCardSwipe = event => {
+    if (touchStart?.id === event.pointerId) touchStart = null;
+  };
+  window.addEventListener('pointerup', finishCardSwipe);
+  window.addEventListener('pointercancel', cancelCardSwipe);
+
   $('cw').addEventListener('click', e => {
+    if (swipeClick) {
+      const sameSwipeClick = e.detail > 0 && performance.now() - swipeClick.at < 400 &&
+        Math.hypot(e.clientX - swipeClick.x, e.clientY - swipeClick.y) < 36;
+      swipeClick = null;
+      if (sameSwipeClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
     if (e.target.closest('button,a,.apill')) return;
     const rect = $('cw').getBoundingClientRect();
     doFlip((e.clientX - rect.left) > rect.width / 2);

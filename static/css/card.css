@@ -57,6 +57,7 @@ body.rm-on .world-return{border-color:rgba(0,0,0,.2)}
 
 .scene{width:var(--cw);height:var(--ch);perspective:1400px}
 .cw{width:100%;height:100%;position:relative;cursor:pointer}
+@media(pointer:coarse){.cw{touch-action:pan-y}}
 .cf{position:absolute;inset:0;border-radius:18px;background:var(--cbg);border:.5px solid var(--bdr);box-shadow:0 36px 72px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.06);overflow:hidden}
 .cf-back{display:none}
 .cf::after{content:'';position:absolute;top:0;left:12%;right:12%;height:1px;background:linear-gradient(90deg,transparent,rgba(244,208,144,.36),transparent);pointer-events:none;z-index:4}
