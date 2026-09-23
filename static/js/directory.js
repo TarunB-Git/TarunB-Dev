@@ -27,9 +27,13 @@ function maximizeNewMobileWindow(node) {
   if (node && isMobileWindow()) node.classList.add('is-maximized');
 }
 
-function moonAvailable() {
-  try { return JSON.parse(sessionStorage.getItem('cloud_landmarks_visited_v2') || '[]').includes('friend'); }
-  catch { return false; }
+function cloudUnlocks() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem('cloud_landmarks_visited_v2') || '[]');
+    return new Set(Array.isArray(value) ? value : []);
+  } catch {
+    return new Set();
+  }
 }
 const folder = (name, target, note = 'Folder') => ({ name, target, note, kind: 'folder' });
 const documentFile = (name, document, note = 'Read-only document') => ({ name, document, note, kind: 'document' });
@@ -42,17 +46,22 @@ function entriesFor(path) {
   ];
   if (path === '/home/guest') return [folder('Desktop', '/home/guest/Desktop'), folder('Downloads', '/home/guest/Downloads'), folder('Pictures', '/home/guest/Pictures'), folder('Trash', '/home/guest/Trash')];
   if (path === '/home/guest/Desktop') {
+    const unlocked = cloudUnlocks();
     const items = [
       { name: 'Work & Résumé', path: 'recruiter', note: 'Recruiter view', kind: 'path' },
-      { name: 'About Me', path: 'viewer', note: "The ship's voyage", kind: 'path' },
-      { name: 'Library & Notes', path: 'personal', note: 'Reading timeline', kind: 'path' },
-      documentFile('Blogs', 'blogs', 'Open the writing archive'),
+    ];
+    if (unlocked.has('viewer')) items.push({ name: 'About Me', path: 'viewer', note: "The ship's voyage", kind: 'path' });
+    if (unlocked.has('personal')) {
+      items.push({ name: 'Library & Notes', path: 'personal', note: 'Reading timeline', kind: 'path' });
+      items.push(documentFile('Blogs', 'blogs', 'Open the writing archive'));
+    }
+    if (unlocked.has('friend')) items.push({ name: 'Stories & Memories', path: 'friend', note: 'Unlocked by the fallen moon', kind: 'path' });
+    items.push(
       documentFile('Legal & Credits.txt', 'legal'),
       shortcut('Email', CONTACTS.email, 'Start an email', '@'),
       shortcut('Call', CONTACTS.call, 'Call by phone', '☎'),
       shortcut('WhatsApp', CONTACTS.whatsapp, 'Open WhatsApp', '◉'),
-    ];
-    if (moonAvailable()) items.splice(3, 0, { name: 'Stories & Memories', path: 'friend', note: 'Unlocked by the fallen moon', kind: 'path' });
+    );
     return items;
   }
   if (path === '/home/guest/Downloads') return [documentFile('Resume.pdf', 'resume', 'Downloadable résumé · PDF')];

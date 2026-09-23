@@ -41,27 +41,49 @@ export function clearPrivacyChoice() {
   window.dispatchEvent(new CustomEvent('privacychange', { detail: null }));
 }
 
-export function bindConsentBanner(root = document) {
+function privacyNodes(root = document) {
   const banner = root.getElementById?.('cookie-banner') || root.querySelector?.('#cookie-banner');
-  if (!banner) return;
+  const settings = root.querySelectorAll?.('[data-open-privacy]') || [];
+  return { banner, settings };
+}
+
+export function openPrivacyPreferences(root = document) {
+  const { banner, settings } = privacyNodes(root);
+  if (!banner) return false;
+  banner.classList.add('show');
+  banner.setAttribute('aria-hidden', 'false');
+  settings.forEach(button => {
+    button.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+  });
+  requestAnimationFrame(() => banner.querySelector('[data-consent="reject"]')?.focus());
+  return true;
+}
+
+export function bindConsentBanner(root = document) {
+  const { banner, settings } = privacyNodes(root);
+  if (!banner || banner.dataset.privacyBound === 'true') return;
+  banner.dataset.privacyBound = 'true';
   const allow = banner.querySelector('[data-consent="allow"]');
   const reject = banner.querySelector('[data-consent="reject"]');
-  const settings = root.querySelectorAll?.('[data-open-privacy]') || [];
 
   const sync = () => {
     const decided = Boolean(privacyChoice());
     banner.classList.toggle('show', !decided);
     banner.setAttribute('aria-hidden', decided ? 'true' : 'false');
-    settings.forEach(button => { button.hidden = !decided; });
+    settings.forEach(button => {
+      button.hidden = false;
+      button.setAttribute('aria-expanded', String(!decided));
+    });
   };
   allow?.addEventListener('click', () => { setPrivacyChoice(true); sync(); });
   reject?.addEventListener('click', () => { setPrivacyChoice(false); sync(); });
-  settings.forEach(button => button.addEventListener('click', event => {
+  root.addEventListener('click', event => {
+    const button = event.target.closest?.('[data-open-privacy]');
+    if (!button) return;
     event.preventDefault();
-    button.hidden = true;
-    banner.classList.add('show');
-    banner.setAttribute('aria-hidden', 'false');
-    reject?.focus();
-  }));
+    openPrivacyPreferences(root);
+  });
+  window.addEventListener('portfolio:open-privacy', () => openPrivacyPreferences(root));
   sync();
 }

@@ -58,6 +58,7 @@ test('deep recruiter route restores light mode with strict local assets', async 
   await expect(page.locator('#card-name')).not.toBeEmpty();
   await expect(page.locator('#rec-timeline .tl-mobile-event')).toHaveCount(5);
   await expect(page.locator('#rec-timeline-sample')).toContainText('Sample content');
+  await expect(page.locator('.rec-news-section .sec-label')).toContainText('Recent News');
   expect(response.headers()['content-security-policy']).toContain("script-src 'self'");
   expect(response.headers()['content-security-policy']).not.toContain("script-src 'self' 'unsafe-inline'");
   expect(external).toEqual([]);
@@ -196,12 +197,40 @@ test('privacy choices stay reachable above Device and from the Cloud home', asyn
   await page.locator('#experience-switch [data-shell-mode="world"]').click();
   await expect(page).toHaveURL('/?shell=world');
   await expect(privacy).toBeVisible();
-  await privacy.click();
+  await page.locator('#cloud-privacy').click();
   await expect(banner).toHaveClass(/\bshow\b/);
+  await expect(privacy).toHaveAttribute('aria-expanded', 'true');
   await reject.click();
 });
 
+test('Device reveals ship and scroll destinations only after their Cloud landmarks', async ({ page }) => {
+  await page.goto('/?shell=directory');
+  await waitForApp(page);
+  await chooseNecessaryOnly(page);
+  const files = page.locator('#directory-files');
+  await expect(files).not.toContainText('About Me');
+  await expect(files).not.toContainText('Library & Notes');
+  await expect(files).not.toContainText('Blogs');
+
+  await page.evaluate(() => sessionStorage.setItem('cloud_landmarks_visited_v2', JSON.stringify(['viewer'])));
+  await page.reload();
+  await waitForApp(page);
+  await expect(files).toContainText('About Me');
+  await expect(files).not.toContainText('Library & Notes');
+  await expect(files).not.toContainText('Blogs');
+
+  await page.evaluate(() => sessionStorage.setItem('cloud_landmarks_visited_v2', JSON.stringify(['viewer', 'personal'])));
+  await page.reload();
+  await waitForApp(page);
+  await expect(files).toContainText('About Me');
+  await expect(files).toContainText('Library & Notes');
+  await expect(files).toContainText('Blogs');
+});
+
 test('directory contacts and cloud-world movement remain available', async ({ page }) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem('cloud_landmarks_visited_v2', JSON.stringify(['viewer', 'personal']));
+  });
   await page.goto('/');
   await waitForApp(page);
   await chooseNecessaryOnly(page);
@@ -247,7 +276,7 @@ test('mobile Device keeps desktop shortcuts and opens paths without a document r
   await page.locator('[data-window-action="close"]').click();
   await expect(page.locator('#directory-window')).toHaveClass(/\bis-closed\b/);
   const shortcuts = page.locator('#directory-desktop-icons .desktop-shortcut');
-  await expect(shortcuts).toHaveCount(10);
+  await expect(shortcuts).toHaveCount(7);
   const firstShortcut = await shortcuts.first().boundingBox();
   expect(firstShortcut?.y).toBeGreaterThanOrEqual(40);
   expect(firstShortcut?.y).toBeLessThan(250);

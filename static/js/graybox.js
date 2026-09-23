@@ -364,7 +364,9 @@ function buildInterface() {
   ui.appendChild(controls);
   bindTouchControls(controls);
   $('graybox-character')?.addEventListener('click', toggleCharacter);
-  $('cloud-privacy')?.addEventListener('click', () => $('privacy-settings')?.click());
+  $('cloud-privacy')?.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('portfolio:open-privacy'));
+  });
 }
 
 function bindTouchControls(controls) {
