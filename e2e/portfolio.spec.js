@@ -176,13 +176,14 @@ test('first visit opens Device and keeps the Cloud switch available', async ({ p
   await expect(page.locator('#experience-switch [data-shell-mode="world"]')).toBeVisible();
 });
 
-test('privacy choices stay reachable above Device and from the Cloud home', async ({ page }) => {
+test('privacy choices open from Device, the single Cloud control, and the recruiter navbar', async ({ page }) => {
   await page.goto('/?shell=directory');
   await waitForApp(page);
   const banner = page.locator('#cookie-banner');
   const reject = page.locator('[data-consent="reject"]');
   const privacy = page.locator('#privacy-settings');
   await expect(banner).toHaveClass(/\bshow\b/);
+  await expect(banner).toHaveAttribute('open', '');
   await expect(reject).toBeVisible();
   expect(await reject.evaluate(button => {
     const rect = button.getBoundingClientRect();
@@ -192,14 +193,37 @@ test('privacy choices stay reachable above Device and from the Cloud home', asyn
   await expect(privacy).toBeVisible();
   await privacy.click();
   await expect(banner).toHaveClass(/\bshow\b/);
+  await expect(banner).toHaveAttribute('open', '');
+  await expect(page.locator('[data-consent="allow"]')).toBeVisible();
   await reject.click();
 
   await page.locator('#experience-switch [data-shell-mode="world"]').click();
   await expect(page).toHaveURL('/?shell=world');
-  await expect(privacy).toBeVisible();
+  await expect(privacy).toBeHidden();
+  await expect(page.locator('#cloud-privacy')).toBeVisible();
+  await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
   await page.locator('#cloud-privacy').click();
   await expect(banner).toHaveClass(/\bshow\b/);
+  await expect(banner).toHaveAttribute('open', '');
   await expect(privacy).toHaveAttribute('aria-expanded', 'true');
+  await reject.click();
+
+  await page.goto('/recruiter?shell=world');
+  await waitForApp(page);
+  await page.evaluate(() => {
+    const scroller = document.getElementById('rec-scroll');
+    const filler = document.createElement('div');
+    filler.style.height = '1200px';
+    scroller.appendChild(filler);
+    scroller.scrollTop = 700;
+    scroller.dispatchEvent(new Event('scroll'));
+  });
+  await expect(page.locator('#mini')).toHaveClass(/\bshow\b/);
+  await expect(page.locator('#mini #privacy-settings')).toBeVisible();
+  await page.locator('#mini #privacy-settings').click();
+  await expect(banner).toHaveAttribute('open', '');
+  await expect(reject).toBeVisible();
+  await expect(page.locator('[data-consent="allow"]')).toBeVisible();
   await reject.click();
 });
 
@@ -208,6 +232,7 @@ test('Device reveals ship and scroll destinations only after their Cloud landmar
   await waitForApp(page);
   await chooseNecessaryOnly(page);
   const files = page.locator('#directory-files');
+  await expect(files).toContainText('Walkthrough.md');
   await expect(files).not.toContainText('About Me');
   await expect(files).not.toContainText('Library & Notes');
   await expect(files).not.toContainText('Blogs');
@@ -235,8 +260,13 @@ test('directory contacts and cloud-world movement remain available', async ({ pa
   await waitForApp(page);
   await chooseNecessaryOnly(page);
   await expect(page.locator('#s-directory')).not.toHaveClass(/\bout\b/);
-  await expect(page.locator('.directory-file')).toHaveCount(8);
-  await expect(page.locator('.directory-file')).toContainText(['Work & Résumé', 'About Me', 'Library & Notes', 'Blogs', 'Legal & Credits.txt', 'Email', 'Call', 'WhatsApp']);
+  await expect(page.locator('.directory-file')).toHaveCount(9);
+  await expect(page.locator('.directory-file')).toContainText(['Work & Résumé', 'Walkthrough.md', 'About Me', 'Library & Notes', 'Blogs', 'Legal & Credits.txt', 'Email', 'Call', 'WhatsApp']);
+  await page.locator('.directory-file').filter({ hasText: 'Walkthrough.md' }).click();
+  await expect(page.locator('#document-window-title')).toHaveText('Walkthrough.md');
+  await expect(page.locator('#directory-document-content')).toContainText('Follow the navigation arrow in the top-right corner');
+  await expect(page.locator('#directory-document-content')).toContainText('special way to travel');
+  await page.locator('[data-document-action="close"]').click();
   await page.locator('.directory-file').filter({ hasText: 'Blogs' }).click();
   await expect(page.locator('.directory-blog-frame')).toBeVisible();
   await expect(page.locator('.directory-blog-frame')).toHaveAttribute('src', /\/blogs\?embed=1/);
@@ -276,7 +306,7 @@ test('mobile Device keeps desktop shortcuts and opens paths without a document r
   await page.locator('[data-window-action="close"]').click();
   await expect(page.locator('#directory-window')).toHaveClass(/\bis-closed\b/);
   const shortcuts = page.locator('#directory-desktop-icons .desktop-shortcut');
-  await expect(shortcuts).toHaveCount(7);
+  await expect(shortcuts).toHaveCount(8);
   const firstShortcut = await shortcuts.first().boundingBox();
   expect(firstShortcut?.y).toBeGreaterThanOrEqual(40);
   expect(firstShortcut?.y).toBeLessThan(250);

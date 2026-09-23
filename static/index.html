@@ -457,13 +457,13 @@
 <div id="toast"></div>
 
 <button id="privacy-settings" type="button" data-open-privacy aria-controls="cookie-banner" aria-expanded="false"><span aria-hidden="true">◈</span> Privacy</button>
-<div id="cookie-banner" role="region" aria-label="Privacy choices" aria-hidden="true">
-  <span>Optional first-party analytics power the public counters. The site works without them. Reaction and owner-login cookies are set only when those features are used. <a href="/cookies">Details</a></span>
+<dialog id="cookie-banner" aria-labelledby="privacy-choice-title" aria-hidden="true">
+  <span><strong id="privacy-choice-title">Privacy choices.</strong> Optional first-party analytics power the public counters. The site works without them. Reaction and owner-login cookies are set only when those features are used. <a href="/cookies">Details</a></span>
   <div class="cookie-actions">
     <button type="button" data-consent="reject">Necessary only</button>
     <button type="button" data-consent="allow">Allow anonymous stats</button>
   </div>
-</div>
+</dialog>
 
 <script type="module" src="/static/js/main.js"></script>
 </body>

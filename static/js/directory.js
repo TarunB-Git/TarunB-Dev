@@ -49,6 +49,7 @@ function entriesFor(path) {
     const unlocked = cloudUnlocks();
     const items = [
       { name: 'Work & Résumé', path: 'recruiter', note: 'Recruiter view', kind: 'path' },
+      documentFile('Walkthrough.md', 'walkthrough', 'Cloud exploration guide'),
     ];
     if (unlocked.has('viewer')) items.push({ name: 'About Me', path: 'viewer', note: "The ship's voyage", kind: 'path' });
     if (unlocked.has('personal')) {
@@ -270,6 +271,7 @@ function bindResize(windowNode) {
 }
 
 function documentMarkup(kind, detail = '') {
+  if (kind === 'walkthrough') return `<p class="doc-meta">MARKDOWN · READ ONLY</p><h1>Walkthrough</h1><p>Some paths and folders are hidden when you first open Device mode. Explore the Cloud and visit its landmarks: each path you discover is automatically saved into Device after you visit it.</p><hr><h2>Walking the Cloud</h2><ul><li><strong>Move:</strong> W / S or the ↑ / ↓ arrow keys.</li><li><strong>Steer:</strong> A / D or the ← / → arrow keys.</li><li><strong>Look around:</strong> grab and drag the world; use the mouse wheel to look farther up or down.</li><li><strong>Jump or fly:</strong> double-tap or hold Space. Hold Shift to drop faster.</li><li><strong>Interact:</strong> press E when a landmark is nearby. On touch screens, use the movement stick and the on-screen action buttons.</li></ul><p>Follow the navigation arrow in the top-right corner to learn where to go next. It points toward the next undiscovered path, or toward the opening between levels when the next destination lies elsewhere.</p><p>After you visit a path, a miniature of its landmark rotates around your character and can take you back there. Pressing <strong>E</strong> is the recommended way to enter a new path, since clicking may instead select one of those spinning companions.</p><p>Discover every path and the Cloud may reveal a special way to travel. There are secret levels hidden above and below the obvious route too—curiosity is rewarded.</p>`;
   if (kind === 'blogs') {
     const requested = String(detail || '/blogs');
     const path = /^\/blogs(?:[?#]|$)/.test(requested) || /^\/blog\/[a-z0-9-]+(?:[?#]|$)/.test(requested)
@@ -297,7 +299,7 @@ function documentMarkup(kind, detail = '') {
 function openDocument(kind, detail = '') {
   const node = $('directory-document-window'); if (!node) return;
   const wasClosed = node.hidden || node.classList.contains('is-closed');
-  const titles = { blogs: 'Blogs — The Scroll', legal: 'Legal & Credits.txt', resume: 'Resume.pdf', 'picture-cloud': 'cloud-world-reference.png', 'picture-ship': 'ship-concept.png', 'pictures-empty': 'Pictures — README.txt', trash: 'README.txt', 'not-found': '404 — File not found' };
+  const titles = { walkthrough: 'Walkthrough.md', blogs: 'Blogs — The Scroll', legal: 'Legal & Credits.txt', resume: 'Resume.pdf', 'picture-cloud': 'cloud-world-reference.png', 'picture-ship': 'ship-concept.png', 'pictures-empty': 'Pictures — README.txt', trash: 'README.txt', 'not-found': '404 — File not found' };
   const content = $('directory-document-content');
   $('document-window-title').textContent = kind === 'media' ? (detail.original_name || 'Media') : (titles[kind] || 'Document');
   content.classList.toggle('directory-blog-document', kind === 'blogs');

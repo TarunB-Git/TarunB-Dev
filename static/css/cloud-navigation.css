@@ -28,8 +28,7 @@ body.graybox-active #w-prompt h2 {font-size:clamp(28px,3.8vw,48px)}
   padding:8px 10px;font-size:11px;letter-spacing:0;text-transform:none;
 }
 body[data-shell-mode="world"]:not([data-path]) #privacy-settings {
-  left:auto!important;right:16px!important;top:auto!important;bottom:56px!important;
-  z-index:620;padding:7px 10px;
+  display:none!important;
 }
 body[data-shell-mode="world"][data-path] #privacy-settings {
   top:auto!important;bottom:14px!important;right:16px!important;
@@ -45,9 +44,6 @@ body[data-shell-mode="world"][data-path] #privacy-settings {
   .world-eyebrow {display:none}
   .graybox-touch {bottom:calc(62px + env(safe-area-inset-bottom))}
   #graybox-character {right:12px;bottom:calc(12px + env(safe-area-inset-bottom))}
-  body[data-shell-mode="world"]:not([data-path]) #privacy-settings {
-    left:12px!important;right:auto!important;bottom:calc(12px + env(safe-area-inset-bottom))!important;
-  }
   #graybox-interact {bottom:210px;min-width:190px;padding:9px}
 }
 @media(max-height:580px) {

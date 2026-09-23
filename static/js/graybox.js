@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { createCloudGuide } from './cloud-guide.js';
+import { openPrivacyPreferences } from './consent.js';
 
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -364,9 +365,7 @@ function buildInterface() {
   ui.appendChild(controls);
   bindTouchControls(controls);
   $('graybox-character')?.addEventListener('click', toggleCharacter);
-  $('cloud-privacy')?.addEventListener('click', () => {
-    window.dispatchEvent(new CustomEvent('portfolio:open-privacy'));
-  });
+  $('cloud-privacy')?.addEventListener('click', () => openPrivacyPreferences());
 }
 
 function bindTouchControls(controls) {

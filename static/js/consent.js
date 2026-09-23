@@ -50,6 +50,14 @@ function privacyNodes(root = document) {
 export function openPrivacyPreferences(root = document) {
   const { banner, settings } = privacyNodes(root);
   if (!banner) return false;
+  // A modal dialog enters the browser's top layer. This keeps the choices
+  // clickable even while Device windows or a folded path navbar are active.
+  try {
+    if (banner.open) banner.close();
+    banner.showModal();
+  } catch {
+    banner.setAttribute('open', '');
+  }
   banner.classList.add('show');
   banner.setAttribute('aria-hidden', 'false');
   settings.forEach(button => {
@@ -67,10 +75,28 @@ export function bindConsentBanner(root = document) {
   const allow = banner.querySelector('[data-consent="allow"]');
   const reject = banner.querySelector('[data-consent="reject"]');
 
+  const close = () => {
+    try {
+      if (banner.open) banner.close();
+    } catch {
+      banner.removeAttribute('open');
+    }
+    banner.classList.remove('show');
+    banner.setAttribute('aria-hidden', 'true');
+  };
+
   const sync = () => {
     const decided = Boolean(privacyChoice());
-    banner.classList.toggle('show', !decided);
-    banner.setAttribute('aria-hidden', decided ? 'true' : 'false');
+    if (decided) close();
+    else {
+      try {
+        if (!banner.open) banner.show();
+      } catch {
+        banner.setAttribute('open', '');
+      }
+      banner.classList.add('show');
+      banner.setAttribute('aria-hidden', 'false');
+    }
     settings.forEach(button => {
       button.hidden = false;
       button.setAttribute('aria-expanded', String(!decided));
@@ -78,11 +104,16 @@ export function bindConsentBanner(root = document) {
   };
   allow?.addEventListener('click', () => { setPrivacyChoice(true); sync(); });
   reject?.addEventListener('click', () => { setPrivacyChoice(false); sync(); });
-  root.addEventListener('click', event => {
-    const button = event.target.closest?.('[data-open-privacy]');
-    if (!button) return;
-    event.preventDefault();
-    openPrivacyPreferences(root);
+  settings.forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      openPrivacyPreferences(root);
+    });
+  });
+  banner.addEventListener('close', () => {
+    banner.classList.remove('show');
+    banner.setAttribute('aria-hidden', 'true');
+    settings.forEach(button => button.setAttribute('aria-expanded', 'false'));
   });
   window.addEventListener('portfolio:open-privacy', () => openPrivacyPreferences(root));
   sync();
