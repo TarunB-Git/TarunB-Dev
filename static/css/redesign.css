@@ -294,7 +294,7 @@ body.rm-on #rec-msgbox .mb-send{border:0;border-radius:0;background:#1d2024;colo
 .stbarlbl span:first-child,.brow{color:#23262b}.stbarlbl span:last-child{color:#755819}.btrack{background:rgba(25,28,32,.12)}
 .sbn{border:1px solid rgba(25,28,32,.18);border-radius:0;background:transparent;color:#23262b}.sbn.hi{background:#202328;color:#f0ece4;border-color:#202328}
 
-#cookie-banner{left:18px;right:18px;bottom:18px;padding:18px 20px;border:1px solid rgba(235,231,220,.18);border-radius:0;background:rgba(12,14,18,.94);box-shadow:0 24px 80px rgba(0,0,0,.55);justify-content:space-between}
+#privacy-preferences-dialog{left:18px;right:18px;bottom:18px;padding:18px 20px;border:1px solid rgba(235,231,220,.18);border-radius:0;background:rgba(12,14,18,.94);box-shadow:0 24px 80px rgba(0,0,0,.55);justify-content:space-between}
 .cookie-actions button{padding:10px 16px;border:1px solid rgba(237,231,215,.28);border-radius:0;background:transparent;color:#eee8d8}
 .cookie-actions button:last-child{background:#eee9df;color:#181a1e;border-color:#eee9df}
 
@@ -356,7 +356,7 @@ body.rm-on #rec-msgbox .mb-send{border:0;border-radius:0;background:#1d2024;colo
   .blog-box{padding:46px 24px}
   .frnd-links-grid{grid-template-columns:1fr;width:calc(100vw - 32px)}
   .msgbox h3{font-size:2rem}
-  #cookie-banner{left:10px;right:10px;bottom:10px}
+  #privacy-preferences-dialog{left:10px;right:10px;bottom:10px}
 }
 @media(max-width:760px){
   #frnd-content-panel,.view-wrap,.pers-wrap{overflow-x:hidden!important}

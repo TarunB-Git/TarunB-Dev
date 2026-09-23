@@ -35,6 +35,13 @@ async function chooseNecessaryOnly(page) {
   if (await reject.isVisible()) await reject.click();
 }
 
+async function holdWorldFallback(page) {
+  await page.addInitScript(() => {
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) => nativeSetTimeout(callback, delay === 4200 ? 60_000 : delay, ...args);
+  });
+}
+
 function runtimeErrors(page) {
   const failures = [];
   page.on('pageerror', error => failures.push(error.message));
@@ -177,9 +184,10 @@ test('first visit opens Device and keeps the Cloud switch available', async ({ p
 });
 
 test('privacy choices open from Device, the single Cloud control, and the recruiter navbar', async ({ page }) => {
+  await holdWorldFallback(page);
   await page.goto('/?shell=directory');
   await waitForApp(page);
-  const banner = page.locator('#cookie-banner');
+  const banner = page.locator('#privacy-preferences-dialog');
   const reject = page.locator('[data-consent="reject"]');
   const allow = page.locator('[data-consent="allow"]');
   const privacy = page.locator('#privacy-settings');
@@ -200,8 +208,8 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
     expect(await page.locator(choice).evaluate(button => {
       const rect = button.getBoundingClientRect();
       return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-        ?.closest('#cookie-banner')?.id;
-    })).toBe('cookie-banner');
+        ?.closest('#privacy-preferences-dialog')?.id;
+    })).toBe('privacy-preferences-dialog');
   };
 
   const expectDismissed = async () => {
@@ -288,17 +296,13 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
   await expect(page).toHaveURL('/?shell=directory');
 });
 
-test('Cloud Privacy opens a visible modal and returns interaction when WebGL is available', async ({ page }) => {
+test('Cloud Privacy opens a visible modal and returns interaction after a choice', async ({ page }) => {
+  await holdWorldFallback(page);
   await page.goto('/?shell=world');
   await waitForApp(page);
-  const cloudReady = await page.evaluate(() =>
-    document.body.dataset.shellMode === 'world' &&
-    !document.getElementById('s-world')?.classList.contains('graybox-no-webgl')
-  );
-  test.skip(!cloudReady, 'The browser running this test cannot render Cloud mode.');
-
+  await chooseNecessaryOnly(page);
   const privacy = page.locator('#cloud-privacy');
-  const banner = page.locator('#cookie-banner');
+  const banner = page.locator('#privacy-preferences-dialog');
   await expect(privacy).toBeVisible();
   await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
   await privacy.click();
@@ -306,12 +310,12 @@ test('Cloud Privacy opens a visible modal and returns interaction when WebGL is 
   expect(await banner.evaluate(dialog => dialog.matches(':modal'))).toBe(true);
   const box = await banner.boundingBox();
   expect(box).not.toBeNull();
-  expect(await page.evaluate(() => window.innerHeight - (document.getElementById('cookie-banner').getBoundingClientRect().bottom))).toBeLessThanOrEqual(24);
+  expect(await page.evaluate(() => window.innerHeight - (document.getElementById('privacy-preferences-dialog').getBoundingClientRect().bottom))).toBeLessThanOrEqual(24);
   expect(await page.locator('[data-consent="reject"]').evaluate(button => {
     const rect = button.getBoundingClientRect();
     return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-      ?.closest('#cookie-banner')?.id;
-  })).toBe('cookie-banner');
+      ?.closest('#privacy-preferences-dialog')?.id;
+  })).toBe('privacy-preferences-dialog');
   await page.locator('[data-consent="reject"]').click();
   await expect(banner).not.toHaveAttribute('open', '');
   expect(await page.locator(':modal').count()).toBe(0);
@@ -319,14 +323,98 @@ test('Cloud Privacy opens a visible modal and returns interaction when WebGL is 
   await expect(page).toHaveURL('/?shell=directory');
 });
 
+
+test('Cloud Privacy works with real mobile touch emulation and restores interaction', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await holdWorldFallback(page);
+  try {
+    await page.goto('/?shell=world');
+    await waitForApp(page);
+    await chooseNecessaryOnly(page);
+
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    const privacy = page.locator('#cloud-privacy');
+    const dialog = page.locator('#privacy-preferences-dialog');
+    await expect(privacy).toBeVisible();
+    await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
+    const tapCenter = async (target, hitSelector) => {
+      const box = await target.boundingBox();
+      expect(box).not.toBeNull();
+      expect(await page.evaluate(({ x, y, selector }) => {
+        return Boolean(document.elementFromPoint(x, y)?.closest(selector));
+      }, { x: box.x + box.width / 2, y: box.y + box.height / 2, selector: hitSelector })).toBe(true);
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    };
+
+    await tapCenter(privacy, '#cloud-privacy');
+    await expect(dialog).toBeVisible();
+    expect(await dialog.evaluate(element => element.matches(':modal'))).toBe(true);
+    const reject = page.locator('[data-consent="reject"]');
+    await expect(reject).toBeVisible();
+    await tapCenter(reject, '[data-consent="reject"]');
+    await expect(dialog).toBeHidden();
+    expect(await page.locator(':modal').count()).toBe(0);
+
+    const device = page.locator('#experience-switch [data-shell-mode="directory"]');
+    await expect(device).toBeVisible();
+    await tapCenter(device, '#experience-switch [data-shell-mode="directory"]');
+    await expect(page).toHaveURL('/?shell=directory');
+    await expect(page.locator('#s-directory')).not.toHaveClass(/\bout\b/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('privacy choices stay available with Brave cookie-banner filtering enabled', async ({ page }) => {
+  await holdWorldFallback(page);
+  await page.goto('/?shell=directory');
+  await waitForApp(page);
+  // Brave Shields cookie filters often target this generic legacy identity.
+  await page.addStyleTag({ content: '#cookie-banner { display: none !important; }' });
+
+  const privacy = page.locator('#privacy-settings');
+  const dialog = page.locator('#privacy-preferences-dialog');
+  await privacy.click();
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate(element => element.matches(':modal'))).toBe(true);
+  await page.locator('[data-consent="reject"]').click();
+  await expect(dialog).toBeHidden();
+
+  // A real navigation control remains clickable after the choice closes the modal.
+  await page.locator('#experience-switch [data-shell-mode="world"]').click();
+  await expect(page).toHaveURL('/?shell=world');
+});
+
+test('a browser-hidden privacy dialog releases the page instead of trapping it', async ({ page }) => {
+  await holdWorldFallback(page);
+  await page.goto('/?shell=directory');
+  await waitForApp(page);
+  await page.addStyleTag({ content: '#privacy-preferences-dialog { display: none !important; }' });
+
+  const dialog = page.locator('#privacy-preferences-dialog');
+  const privacy = page.locator('#privacy-settings');
+  await privacy.click();
+  await expect(dialog).not.toHaveAttribute('open', '');
+  await expect(privacy).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('#experience-switch [data-shell-mode="world"]').click();
+  await expect(page).toHaveURL('/?shell=world');
+});
+
 test('mobile hides Device home Privacy while Cloud and folded recruiter Privacy remain interactive', async ({ page }) => {
+  await holdWorldFallback(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/?shell=directory');
   await waitForApp(page);
   await chooseNecessaryOnly(page);
 
   const privacy = page.locator('#privacy-settings');
-  const banner = page.locator('#cookie-banner');
+  const banner = page.locator('#privacy-preferences-dialog');
   await expect(privacy).toBeHidden();
   await page.locator('#experience-switch [data-shell-mode="world"]').click();
   await expect(page).toHaveURL('/?shell=world');
@@ -815,7 +903,7 @@ test('analytics rejection sends nothing and acceptance sends only a coarse sourc
   await rejectedPage.waitForTimeout(200);
   expect(rejectedEvents).toBe(0);
   await rejectedPage.locator('[data-open-privacy]').click();
-  await expect(rejectedPage.locator('#cookie-banner')).toHaveClass(/\bshow\b/);
+  await expect(rejectedPage.locator('#privacy-preferences-dialog')).toHaveClass(/\bshow\b/);
   await expect(rejectedPage.locator('[data-consent="reject"]')).toBeFocused();
   await rejectedPage.locator('[data-consent="reject"]').click();
   await rejectedContext.close();

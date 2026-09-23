@@ -42,21 +42,49 @@ export function clearPrivacyChoice() {
 }
 
 function privacyNodes(root = document) {
-  const banner = root.getElementById?.('cookie-banner') || root.querySelector?.('#cookie-banner');
+  const banner = root.getElementById?.('privacy-preferences-dialog') || root.querySelector?.('#privacy-preferences-dialog');
   const settings = root.querySelectorAll?.('[data-open-privacy]') || [];
   return { banner, settings };
+}
+
+function isRendered(element) {
+  if (!element?.isConnected || element.hidden) return false;
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' && rect.width > 0 && rect.height > 0;
+}
+
+function closeSuppressedDialog(banner, settings) {
+  try {
+    if (banner.open) banner.close();
+  } catch {
+    banner.removeAttribute('open');
+  }
+  banner.classList.remove('show');
+  banner.setAttribute('aria-hidden', 'true');
+  settings.forEach(button => button.setAttribute('aria-expanded', 'false'));
 }
 
 export function openPrivacyPreferences(root = document) {
   const { banner, settings } = privacyNodes(root);
   if (!banner) return false;
-  // A modal dialog enters the browser's top layer. This keeps the choices
-  // clickable even while Device windows or a folded path navbar are active.
+  // Keep the identity away from cookie-banner selectors used by filter lists.
+  // A modal that a browser filter hides would leave the rest of the document
+  // inert with no visible way to dismiss it.
   try {
+    if (banner.open && banner.matches(':modal')) return true;
     if (banner.open) banner.close();
-    banner.showModal();
+    if (typeof banner.showModal === 'function') banner.showModal();
+    else if (typeof banner.show === 'function') banner.show();
+    else banner.setAttribute('open', '');
   } catch {
-    banner.setAttribute('open', '');
+    try {
+      if (banner.open && banner.matches(':modal')) banner.close();
+      if (typeof banner.show === 'function' && !banner.open) banner.show();
+      else banner.setAttribute('open', '');
+    } catch {
+      banner.setAttribute('open', '');
+    }
   }
   banner.classList.add('show');
   banner.setAttribute('aria-hidden', 'false');
@@ -64,7 +92,17 @@ export function openPrivacyPreferences(root = document) {
     button.hidden = false;
     button.setAttribute('aria-expanded', 'true');
   });
-  requestAnimationFrame(() => banner.querySelector('[data-consent="reject"]')?.focus());
+  requestAnimationFrame(() => {
+    const choices = [...banner.querySelectorAll('[data-consent]')];
+    if (!isRendered(banner) || choices.length < 2 || !choices.every(isRendered)) {
+      // Shields and content filters sometimes hide consent UIs. If that
+      // happens, immediately release the modal state instead of trapping the
+      // page behind an invisible dialog.
+      closeSuppressedDialog(banner, settings);
+      return;
+    }
+    banner.querySelector('[data-consent="reject"]')?.focus();
+  });
   return true;
 }
 
