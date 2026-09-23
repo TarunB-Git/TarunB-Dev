@@ -196,6 +196,7 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(1440);
     expect(box.y + box.height).toBeLessThanOrEqual(900);
+    expect(900 - (box.y + box.height)).toBeLessThanOrEqual(24);
     expect(await page.locator(choice).evaluate(button => {
       const rect = button.getBoundingClientRect();
       return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
@@ -234,10 +235,14 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
   await page.locator('#experience-switch [data-shell-mode="world"]').click();
   await expect(page).toHaveURL('/?shell=world');
 
-  await expect(privacy).toBeHidden();
-  await expect(page.locator('#cloud-privacy')).toBeVisible();
+  const cloudPrivacy = page.locator('#cloud-privacy');
+  const cloudIsActive = await page.evaluate(() => document.body.dataset.shellMode === 'world');
+  const activePrivacyControl = cloudIsActive ? cloudPrivacy : privacy;
+  await expect(activePrivacyControl).toBeVisible();
   await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
-  await page.locator('#cloud-privacy').click();
+  if (cloudIsActive) await expect(privacy).toBeHidden();
+  else await expect(cloudPrivacy).toBeHidden();
+  await activePrivacyControl.click();
   await expectDialogOpen('[data-consent="reject"]');
   await expect(privacy).toHaveAttribute('aria-expanded', 'true');
   await reject.click();
@@ -247,7 +252,7 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
   await page.locator('#experience-switch [data-shell-mode="world"]').click();
   await expect(page).toHaveURL('/?shell=world');
 
-  await page.locator('#cloud-privacy').click();
+  await activePrivacyControl.click();
   await expectDialogOpen('[data-consent="allow"]');
   await page.keyboard.press('Escape');
   await expectDismissed();
@@ -270,8 +275,98 @@ test('privacy choices open from Device, the single Cloud control, and the recrui
   await expectDialogOpen('[data-consent="allow"]');
   await allow.click();
   await expectDismissed();
+  await page.locator('#mini #privacy-settings').click();
+  await expectDialogOpen('[data-consent="reject"]');
+  const recruiterUrlBeforeEscape = page.url();
+  const recruiterShellBeforeEscape = await page.evaluate(() => document.body.dataset.shellMode);
+  await page.keyboard.press('Escape');
+  await expectDismissed();
+  await expect(page).toHaveURL(recruiterUrlBeforeEscape);
+  expect(await page.evaluate(() => document.body.dataset.shellMode)).toBe(recruiterShellBeforeEscape);
+  await expect(page.locator('#mini #privacy-settings')).toBeVisible();
   await page.locator('#mini #experience-switch [data-shell-mode="directory"]').click();
   await expect(page).toHaveURL('/?shell=directory');
+});
+
+test('Cloud Privacy opens a visible modal and returns interaction when WebGL is available', async ({ page }) => {
+  await page.goto('/?shell=world');
+  await waitForApp(page);
+  const cloudReady = await page.evaluate(() =>
+    document.body.dataset.shellMode === 'world' &&
+    !document.getElementById('s-world')?.classList.contains('graybox-no-webgl')
+  );
+  test.skip(!cloudReady, 'The browser running this test cannot render Cloud mode.');
+
+  const privacy = page.locator('#cloud-privacy');
+  const banner = page.locator('#cookie-banner');
+  await expect(privacy).toBeVisible();
+  await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
+  await privacy.click();
+  await expect(banner).toBeVisible();
+  expect(await banner.evaluate(dialog => dialog.matches(':modal'))).toBe(true);
+  const box = await banner.boundingBox();
+  expect(box).not.toBeNull();
+  expect(await page.evaluate(() => window.innerHeight - (document.getElementById('cookie-banner').getBoundingClientRect().bottom))).toBeLessThanOrEqual(24);
+  expect(await page.locator('[data-consent="reject"]').evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      ?.closest('#cookie-banner')?.id;
+  })).toBe('cookie-banner');
+  await page.locator('[data-consent="reject"]').click();
+  await expect(banner).not.toHaveAttribute('open', '');
+  expect(await page.locator(':modal').count()).toBe(0);
+  await page.locator('#experience-switch [data-shell-mode="directory"]').click();
+  await expect(page).toHaveURL('/?shell=directory');
+});
+
+test('mobile hides Device home Privacy while Cloud and folded recruiter Privacy remain interactive', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?shell=directory');
+  await waitForApp(page);
+  await chooseNecessaryOnly(page);
+
+  const privacy = page.locator('#privacy-settings');
+  const banner = page.locator('#cookie-banner');
+  await expect(privacy).toBeHidden();
+  await page.locator('#experience-switch [data-shell-mode="world"]').click();
+  await expect(page).toHaveURL('/?shell=world');
+  const cloudIsActive = await page.evaluate(() => document.body.dataset.shellMode === 'world');
+  if (cloudIsActive) {
+    await expect(page.locator('#cloud-privacy')).toBeVisible();
+    await expect(privacy).toBeHidden();
+    await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(1);
+    await page.locator('#cloud-privacy').click();
+    await expect(banner).toBeVisible();
+    expect(await banner.evaluate(dialog => dialog.matches(':modal'))).toBe(true);
+    await page.locator('[data-consent="reject"]').click();
+    await expect(banner).toBeHidden();
+  } else {
+    await expect(page.locator('#cloud-privacy')).toBeHidden();
+    await expect(page.locator('#privacy-settings:visible, #cloud-privacy:visible')).toHaveCount(0);
+  }
+  await expect(page.locator('#experience-switch [data-shell-mode="directory"]')).toBeVisible();
+  await page.locator('#experience-switch [data-shell-mode="directory"]').click();
+  await expect(privacy).toBeHidden();
+
+  await page.goto('/recruiter?shell=world');
+  await waitForApp(page);
+  await page.evaluate(() => {
+    const scroller = document.getElementById('rec-scroll');
+    scroller.scrollTop = 700;
+    scroller.dispatchEvent(new Event('scroll'));
+  });
+  const miniPrivacy = page.locator('#mini #privacy-settings');
+  await expect(page.locator('#mini')).toHaveClass(/\bshow\b/);
+  await expect(miniPrivacy).toBeVisible();
+  await miniPrivacy.click();
+  await expect(banner).toBeVisible();
+  expect(await banner.evaluate(dialog => dialog.matches(':modal'))).toBe(true);
+  await page.locator('[data-consent="allow"]').click();
+  await expect(banner).toBeHidden();
+  await expect(page.locator('#mini #experience-switch [data-shell-mode="directory"]')).toBeVisible();
+  await page.locator('#mini #experience-switch [data-shell-mode="directory"]').click();
+  await expect(page).toHaveURL('/?shell=directory');
+  await expect(privacy).toBeHidden();
 });
 
 test('Device reveals ship and scroll destinations only after their Cloud landmarks', async ({ page }) => {

@@ -30,6 +30,7 @@ body.graybox-active #w-prompt h2 {font-size:clamp(28px,3.8vw,48px)}
 body[data-shell-mode="world"]:not([data-path]) #privacy-settings {
   display:none!important;
 }
+body[data-shell-mode="directory"] #cloud-privacy{display:none!important}
 body[data-shell-mode="world"][data-path] #privacy-settings {
   top:auto!important;bottom:14px!important;right:16px!important;
 }
@@ -156,10 +157,10 @@ body[data-shell-mode="world"][data-path] #privacy-settings{left:18px!important;r
   #mini .mini-role{max-width:126px}
 }
 
-/* Keep Device Privacy clear of the centered mode switch on narrow screens. */
+/* Device home keeps the header clear on narrow screens; Cloud and path privacy
+   controls remain available in their established locations. */
 @media(max-width:720px){
   body[data-shell-mode="directory"]:not([data-path]) #privacy-settings{
-    top:36px!important;right:8px!important;bottom:auto!important;left:auto!important;
-    min-height:28px;padding:5px 9px!important;
+    display:none!important;
   }
 }

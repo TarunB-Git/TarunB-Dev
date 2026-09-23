@@ -421,6 +421,9 @@ for (const [id, close] of [['rmo', closeResume], ['smo', closeShare], ['stmo', c
 
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
+  // Let the native privacy dialog handle Escape; global path Escape must not
+  // navigate away while the dialog is being dismissed.
+  if ($('cookie-banner')?.matches(':modal')) return;
   if ($('blog-mo')?.classList.contains('open')) { closePost(); return; }
   const timelineDialog = document.querySelector('.tl-dialog[open]');
   if (timelineDialog) { event.preventDefault(); timelineDialog.close?.(); return; }
