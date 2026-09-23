@@ -88,7 +88,6 @@ body[data-shell-mode="directory"] #privacy-settings{top:2px!important;right:125p
 #world-nudge[hidden]{display:none}#world-nudge.show{opacity:1;transform:translate(-50%,0)}
 #cloud-utilities{position:absolute;right:18px;bottom:16px;display:flex;gap:10px;align-items:center;pointer-events:auto;z-index:50}
 #cloud-utilities button{position:static!important;min-height:36px;padding:8px 12px;border:1px solid #c6b8a766;border-radius:8px;background:#292332ed;color:#f1e8db;font:500 12px Inter,sans-serif;cursor:pointer;max-width:none}
-body[data-shell-mode="world"]:not([data-path]) #privacy-settings{display:none!important}
 body[data-shell-mode="world"][data-path] #privacy-settings{left:18px!important;right:auto!important;bottom:14px!important;top:auto!important}
 @media(pointer:coarse){
  #cloud-guide{top:52px;right:14px;width:168px}

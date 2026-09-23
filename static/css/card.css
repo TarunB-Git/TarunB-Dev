@@ -77,7 +77,7 @@ body.rm-on .back-aurora{display:none!important}
 
 .cfi{position:relative;z-index:5;height:100%;padding:16px 22px 14px;display:flex;flex-direction:column;opacity:0;transition:opacity .65s ease}
 .toprow{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
-.apill{display:flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--txt);cursor:pointer;opacity:.82;transition:opacity .2s}
+.apill{appearance:none;display:flex;align-items:center;gap:5px;padding:0;border:0;background:none;font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--txt);cursor:pointer;opacity:.82;transition:opacity .2s}
 .apill:hover{opacity:1}
 .adot{width:5px;height:5px;border-radius:50%;background:var(--cgold2)}
 .lupd{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--mut);letter-spacing:.05em}

@@ -486,6 +486,7 @@ export function leaveRecruiterPath() {
   if (recFadeTimer) clearTimeout(recFadeTimer);
   recTimer = null;
   recFadeTimer = null;
+  $('att')?.classList.remove('vis');
   setShellSwitchInMini(false);
 }
 
@@ -616,10 +617,25 @@ function bindCardInteractions() {
     doFlip((e.clientX - rect.left) > rect.width / 2);
   });
 
-  // analytics pill → live tooltip + stats modal
+  // Analytics pill → live tooltip + stats modal. The request can resolve after
+  // the pointer has already left, so guard the async result instead of letting
+  // a stale response resurrect a tooltip that can no longer receive leave.
   const att = $('att');
-  $('apill').addEventListener('mouseenter', async () => {
+  const analyticsPill = $('apill');
+  const fineHover = matchMedia('(hover:hover) and (pointer:fine)');
+  let previewActive = false;
+  let previewVersion = 0;
+  const hideAnalyticsPreview = () => {
+    previewActive = false;
+    previewVersion += 1;
+    att.classList.remove('vis');
+  };
+  analyticsPill.addEventListener('pointerenter', async () => {
+    if (!fineHover.matches) return;
+    previewActive = true;
+    const version = ++previewVersion;
     const s = await maybeGet('/stats/public');
+    if (!previewActive || version !== previewVersion) return;
     if (s) {
       $('att-views').textContent = (s.totals.view || 0).toLocaleString();
       $('att-resume').textContent = (s.totals.resume_open || 0).toLocaleString();
@@ -627,13 +643,20 @@ function bindCardInteractions() {
       $('att-vcards').textContent = (s.totals.vcard || 0).toLocaleString();
       $('apill-views').textContent = (s.totals.view || 0).toLocaleString() + ' views';
     }
-    const r = $('apill').getBoundingClientRect();
+    const r = analyticsPill.getBoundingClientRect();
     att.style.top = (r.bottom + 8) + 'px';
     att.style.left = Math.max(8, r.left) + 'px';
     att.classList.add('vis');
   });
-  $('apill').addEventListener('mouseleave', () => att.classList.remove('vis'));
-  $('apill').addEventListener('click', e => { e.stopPropagation(); openStats(); });
+  analyticsPill.addEventListener('pointerleave', hideAnalyticsPreview);
+  analyticsPill.addEventListener('blur', hideAnalyticsPreview);
+  analyticsPill.addEventListener('click', e => {
+    e.stopPropagation();
+    hideAnalyticsPreview();
+    openStats();
+  });
+  $('rec-scroll')?.addEventListener('scroll', hideAnalyticsPreview, { passive: true });
+  window.addEventListener('blur', hideAnalyticsPreview);
   const toggle = $('rtog');
   if (toggle && toggle.tagName !== 'BUTTON') toggle.addEventListener('keydown', event => {
     if (event.key !== 'Enter' && event.key !== ' ') return;

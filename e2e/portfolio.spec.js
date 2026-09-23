@@ -99,6 +99,11 @@ test('recruiter card flips, folds in both modes, and restores modal focus', asyn
   await expect(page.locator('#cback')).toBeHidden();
   await expect(card).toHaveAttribute('aria-label', 'Business card front');
 
+  await page.locator('#apill').hover();
+  await expect(page.locator('#att')).toHaveClass(/\bvis\b/);
+  await page.mouse.move(8, 500);
+  await expect(page.locator('#att')).not.toHaveClass(/\bvis\b/);
+
   const share = page.locator('[data-action="open-share"]');
   await share.focus();
   await share.click();
@@ -141,6 +146,10 @@ test('recruiter card flips, folds in both modes, and restores modal focus', asyn
     scroller.dispatchEvent(new Event('scroll'));
   });
   await expect(page.locator('#mini')).toHaveClass(/\bshow\b/);
+  await page.locator('[data-app-action="maximize"]').click();
+  await expect(page.locator('#directory-app-window')).toHaveClass(/\bis-maximized\b/);
+  await expect(page.locator('#mini')).toBeVisible();
+  expect((await page.locator('#mini').boundingBox())?.y).toBeGreaterThanOrEqual(69);
 });
 
 test('consented business-card flips are counted in public analytics', async ({ page }) => {
@@ -164,6 +173,32 @@ test('first visit opens Device and keeps the Cloud switch available', async ({ p
   await expect(page.locator('#s-directory')).not.toHaveClass(/\bout\b/);
   await expect(page.locator('#experience-switch [data-shell-mode="directory"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#experience-switch [data-shell-mode="world"]')).toBeVisible();
+});
+
+test('privacy choices stay reachable above Device and from the Cloud home', async ({ page }) => {
+  await page.goto('/?shell=directory');
+  await waitForApp(page);
+  const banner = page.locator('#cookie-banner');
+  const reject = page.locator('[data-consent="reject"]');
+  const privacy = page.locator('#privacy-settings');
+  await expect(banner).toHaveClass(/\bshow\b/);
+  await expect(reject).toBeVisible();
+  expect(await reject.evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('#cookie-banner')?.id;
+  })).toBe('cookie-banner');
+  await reject.click();
+  await expect(privacy).toBeVisible();
+  await privacy.click();
+  await expect(banner).toHaveClass(/\bshow\b/);
+  await reject.click();
+
+  await page.locator('#experience-switch [data-shell-mode="world"]').click();
+  await expect(page).toHaveURL('/?shell=world');
+  await expect(privacy).toBeVisible();
+  await privacy.click();
+  await expect(banner).toHaveClass(/\bshow\b/);
+  await reject.click();
 });
 
 test('directory contacts and cloud-world movement remain available', async ({ page }) => {

@@ -158,3 +158,10 @@ body[data-shell-mode="directory"] .directory-app-window.active .ps{transition:no
   .directory-overview{padding:48px 12px 12px}
   .directory-app-window.active .tl-scroll-shell,.directory-app-window.active .psec{max-width:100%!important}
 }
+
+/* Keep the folded recruiter navigation inside the app content's containing
+   block. A maximized window no longer has a transform, so viewport-fixed
+   positioning placed the bar above the clipped content area. */
+body[data-shell-mode="directory"] .directory-app-window.active .directory-app-content #mini{
+  position:absolute;top:0;
+}

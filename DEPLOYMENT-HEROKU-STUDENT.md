@@ -249,13 +249,26 @@ If both the Heroku address and custom domain must submit admin requests temporar
 
 ## Updating the site later
 
-1. Make and test changes locally with SQLite.
-2. Commit and push them to the deployment branch.
-3. In Heroku **Deploy**, deploy the new commit—or enable automatic deploys after the first launch is proven.
-4. Check `/readyz` and the logs.
-5. Confirm admin data and uploads remain present.
+Before a production update, capture a database backup:
 
-Code deployments do not replace Postgres. Editing `ADMIN_PASSPHRASE` after owner access already exists also does not replace the saved password hash. Use the recovery flow when you intentionally need to change a forgotten passphrase.
+```bash
+heroku pg:backups:capture --app YOUR-APP-NAME
+```
+
+Then:
+
+1. Make and test changes locally with SQLite.
+2. Check `git status`. The local `server/site.db`, `server/uploads/`, `.env`, and backups are ignored and must not be forced into Git.
+3. Stage only the source and documentation files you intended to change, commit them, and push the deployment branch to GitHub.
+4. If Heroku automatic deploys are enabled, wait for that commit to finish. Otherwise open **Heroku → Deploy → Manual deploy**, choose the same branch, and click **Deploy Branch**.
+5. Check `/readyz` and `heroku logs --tail --app YOUR-APP-NAME`.
+6. Confirm admin content and one existing uploaded file are still present.
+
+Do **not** run `server.migrate_to_postgres` again for normal code updates. That command is a one-time import for a fresh database and deliberately refuses to overwrite a populated destination.
+
+Code deployments replace the application slug, not the attached Postgres database. The local SQLite file cannot overwrite Heroku merely because source code was pushed: it is ignored by Git, and production connects through Heroku's `DATABASE_URL`. Data is endangered only if you delete/replace the Postgres add-on, change `DATABASE_URL` to a different database, explicitly restore/import over it, or write a destructive migration.
+
+On startup, schema creation is idempotent. The tracked `CARD` and `RESUME` defaults are synchronized field by field: values changed in Admin remain owner-controlled, while fields still equal to the previous code default may follow a new code edit. Editing `ADMIN_PASSPHRASE` after owner access already exists does not replace the saved password hash. Use the recovery flow when you intentionally need to change a forgotten passphrase.
 
 ## Cost guardrails
 
